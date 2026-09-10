@@ -818,6 +818,14 @@ export default function CourseInsightsApp() {
                   />
                 </label>
                 <label style={{ color: "#B8C0D4", fontSize: 12.5, display: "flex", alignItems: "center", gap: 8 }}>
+                  Average performance threshold (average % from)
+                  <input
+                    type="number" min={0} max={100} value={threshold}
+                    onChange={(e) => setThreshold(Number(e.target.value) || 0)}
+                    style={{ width: 56, padding: "4px 6px", borderRadius: 4, border: "1px solid #3E5079", background: "#152038", color: "#fff" }}
+                  />
+                </label>
+                <label style={{ color: "#B8C0D4", fontSize: 12.5, display: "flex", alignItems: "center", gap: 8 }}>
                   Good performance threshold (average % from)
                   <input
                     type="number" min={0} max={100} value={avgMax}
