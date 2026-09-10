@@ -224,7 +224,9 @@ export default function CourseInsightsApp() {
   const [pdfError, setPdfError] = useState("");
   const [pdfProgress, setPdfProgress] = useState({ done: 0, total: 0 });
   const [fileErrors, setFileErrors] = useState([]);
-  const [threshold, setThreshold] = useState(40);
+  const [threshold, setThreshold] = useState(40); // At Risk / Average boundary
+  const [avgMax, setAvgMax] = useState(70); // Average / Good boundary
+  const [goodMax, setGoodMax] = useState(90); // Good / Excellent boundary
   const [collegeName, setCollegeName] = useState("");
   const [collegeLogo, setCollegeLogo] = useState(""); // data URL, embeds directly so the exported HTML has no external file dependency
   const [dragOver, setDragOver] = useState(false);
@@ -419,12 +421,19 @@ export default function CourseInsightsApp() {
 
     // Full-picture performance bands: everyone is shown, not just the
     // at-risk group, so the report covers at-risk / average / good /
-    // excellent completion.
+    // excellent completion. Boundaries are user-configurable (threshold,
+    // avgMax, goodMax) rather than fixed, since what counts as "good"
+    // varies by cohort, course difficulty, and how far into the term it is.
+    // Guard against the boundaries being dragged out of order so the bands
+    // never invert into an impossible range.
+    const b1 = threshold;
+    const b2 = Math.max(avgMax, b1);
+    const b3 = Math.max(goodMax, b2);
     const categoryDefs = [
-      { key: "atRisk", title: "At Risk", range: `below ${threshold}%`, color: RUST, test: (avg) => avg < threshold },
-      { key: "average", title: "Average", range: `${threshold}%–69.9%`, color: GOLD, test: (avg) => avg >= threshold && avg < 70 },
-      { key: "good", title: "Good", range: "70%–89.9%", color: NAVY_SOFT, test: (avg) => avg >= 70 && avg < 90 },
-      { key: "excellent", title: "Excellent", range: "90% and above", color: GREEN, test: (avg) => avg >= 90 },
+      { key: "atRisk", title: "At Risk", range: `below ${b1}%`, color: RUST, test: (avg) => avg < b1 },
+      { key: "average", title: "Average", range: `${b1}%–${(b2 - 0.1).toFixed(1)}%`, color: GOLD, test: (avg) => avg >= b1 && avg < b2 },
+      { key: "good", title: "Good", range: `${b2}%–${(b3 - 0.1).toFixed(1)}%`, color: NAVY_SOFT, test: (avg) => avg >= b2 && avg < b3 },
+      { key: "excellent", title: "Excellent", range: `${b3}% and above`, color: GREEN, test: (avg) => avg >= b3 },
     ];
     const categorizedStudents = categoryDefs.map((c) => ({
       ...c,
@@ -454,7 +463,7 @@ export default function CourseInsightsApp() {
       branchCharts, allStudentsFlat, categorizedStudents, atRiskAll, topPerformers,
       weakestSection, strongestSection, weakestCourse, batches, enrollment, enrollmentTotals,
     };
-  }, [courseFiles, passwordFiles, threshold]);
+  }, [courseFiles, passwordFiles, threshold, avgMax, goodMax]);
 
   const generatedDate = new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
 
@@ -799,14 +808,35 @@ export default function CourseInsightsApp() {
 
           {insights && (
             <div style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-              <label style={{ color: "#B8C0D4", fontSize: 12.5, display: "flex", alignItems: "center", gap: 8 }}>
-                At-risk threshold (average % below)
-                <input
-                  type="number" min={0} max={100} value={threshold}
-                  onChange={(e) => setThreshold(Number(e.target.value) || 0)}
-                  style={{ width: 56, padding: "4px 6px", borderRadius: 4, border: "1px solid #3E5079", background: "#152038", color: "#fff" }}
-                />
-              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+                <label style={{ color: "#B8C0D4", fontSize: 12.5, display: "flex", alignItems: "center", gap: 8 }}>
+                  At Risk below
+                  <input
+                    type="number" min={0} max={100} value={threshold}
+                    onChange={(e) => setThreshold(Number(e.target.value) || 0)}
+                    style={{ width: 56, padding: "4px 6px", borderRadius: 4, border: "1px solid #3E5079", background: "#152038", color: "#fff" }}
+                  />
+                  %
+                </label>
+                <label style={{ color: "#B8C0D4", fontSize: 12.5, display: "flex", alignItems: "center", gap: 8 }}>
+                  Good from
+                  <input
+                    type="number" min={0} max={100} value={avgMax}
+                    onChange={(e) => setAvgMax(Number(e.target.value) || 0)}
+                    style={{ width: 56, padding: "4px 6px", borderRadius: 4, border: "1px solid #3E5079", background: "#152038", color: "#fff" }}
+                  />
+                  %
+                </label>
+                <label style={{ color: "#B8C0D4", fontSize: 12.5, display: "flex", alignItems: "center", gap: 8 }}>
+                  Excellent from
+                  <input
+                    type="number" min={0} max={100} value={goodMax}
+                    onChange={(e) => setGoodMax(Number(e.target.value) || 0)}
+                    style={{ width: 56, padding: "4px 6px", borderRadius: 4, border: "1px solid #3E5079", background: "#152038", color: "#fff" }}
+                  />
+                  %
+                </label>
+              </div>
               <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
                 <button
                   className="cip-btn"
