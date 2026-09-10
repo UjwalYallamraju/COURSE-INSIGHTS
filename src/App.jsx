@@ -32,8 +32,13 @@ function parseCell(raw) {
   return { value: num, notStarted };
 }
 
+// Section identity always comes from the actual "Groups" column value on the
+// row itself (groupStr) — this is what lets a single combined workbook with
+// many sections mixed into one sheet split apart correctly, and what lets
+// individual per-section files still work the same way. The filename is only
+// ever a fallback for the rare row with a blank Groups cell.
 function parseSectionMeta(groupStr, fileName) {
-  const source = groupStr || fileName;
+  const source = (groupStr && String(groupStr).trim()) || fileName;
   const m = String(source).match(/(\d{4}-\d{4})-([A-Za-z]+)-([A-Za-z0-9]+)/);
   if (m) {
     return {
@@ -43,7 +48,10 @@ function parseSectionMeta(groupStr, fileName) {
       label: `${m[2].toUpperCase()}-${m[3].toUpperCase()}`,
     };
   }
-  return { batch: "—", branch: "General", section: fileName, label: fileName };
+  // No "batch-branch-section" pattern found — trust the raw Groups value
+  // itself as the section identity rather than collapsing everything down
+  // to the filename, which is what a combined multi-section sheet needs.
+  return { batch: "—", branch: "General", section: source, label: source };
 }
 
 function shortCourseLabel(header) {
@@ -83,6 +91,9 @@ async function parseWorkbook(file) {
       groups: r[groupIdx] ?? "",
       createdTime: timeIdx >= 0 ? r[timeIdx] ?? "" : "",
     }));
+    // File-level meta is only an approximation (first row's Groups value) used
+    // for the upload-list chip label. Real section grouping happens later,
+    // per entry, off each entry's own `groups` value.
     const meta = parseSectionMeta(entries[0]?.groups, file.name);
     return { kind: "password", fileName: file.name, meta, entries };
   }
@@ -121,6 +132,7 @@ async function parseWorkbook(file) {
       };
     });
 
+    // Same story as above: file-level meta is only a display approximation.
     const meta = parseSectionMeta(students[0]?.groups, file.name);
     return { kind: "course", fileName: file.name, meta, courses, students };
   }
@@ -275,30 +287,61 @@ export default function CourseInsightsApp() {
   const insights = useMemo(() => {
     if (!courseFiles.length) return null;
 
-    const sections = courseFiles.map((f) => {
-      const studentCount = f.students.length;
-      const avgOfAvgs = studentCount ? f.students.reduce((s, st) => s + st.avg, 0) / studentCount : 0;
-      const perCourse = f.courses.map((c) => {
-        let sum = 0, notStartedCount = 0, completeCount = 0;
-        f.students.forEach((st) => {
-          const cv = st.courseValues[c.key];
-          sum += cv.value;
-          if (cv.notStarted) notStartedCount++;
-          if (cv.value >= COMPLETE_THRESHOLD) completeCount++;
-        });
-        return {
-          ...c,
-          avg: studentCount ? sum / studentCount : 0,
-          notStartedCount,
-          completeCount,
-          notStartedRate: studentCount ? notStartedCount / studentCount : 0,
-        };
+    // Group every student by their own "Groups" cell value — not by which
+    // file they came from. This is what makes a single combined workbook
+    // (many sections stacked in one sheet) split apart into the right
+    // sections, while multiple individual per-section files that happen to
+    // share a Groups value still merge together correctly.
+    const sectionMap = new Map();
+    courseFiles.forEach((f) => {
+      f.students.forEach((st) => {
+        const rawGroup = (st.groups && String(st.groups).trim()) || "";
+        const meta = parseSectionMeta(rawGroup, f.fileName);
+        const key = meta.label;
+        if (!sectionMap.has(key)) {
+          sectionMap.set(key, { ...meta, fileNames: new Set(), courseMap: new Map(), students: [] });
+        }
+        const entry = sectionMap.get(key);
+        entry.fileNames.add(f.fileName);
+        f.courses.forEach((c) => { if (!entry.courseMap.has(c.key)) entry.courseMap.set(c.key, c); });
+        entry.students.push(st);
       });
-      const atRisk = f.students.filter((s) => s.avg < threshold);
-      const startedCount = f.students.filter((s) => Object.values(s.courseValues).some((cv) => !cv.notStarted)).length;
-      const notStartedCount = studentCount - startedCount;
-      return { ...f.meta, fileName: f.fileName, studentCount, avgOfAvgs, perCourse, atRisk, startedCount, notStartedCount, students: f.students, courses: f.courses };
     });
+
+    const sections = Array.from(sectionMap.values())
+      .map((sec) => {
+        const courses = Array.from(sec.courseMap.values());
+        const studentCount = sec.students.length;
+        const avgOfAvgs = studentCount ? sec.students.reduce((s, st) => s + st.avg, 0) / studentCount : 0;
+        const perCourse = courses.map((c) => {
+          let sum = 0, notStartedCount = 0, completeCount = 0, seen = 0;
+          sec.students.forEach((st) => {
+            const cv = st.courseValues[c.key];
+            if (!cv) return; // this student's source file didn't include this course column
+            seen++;
+            sum += cv.value;
+            if (cv.notStarted) notStartedCount++;
+            if (cv.value >= COMPLETE_THRESHOLD) completeCount++;
+          });
+          return {
+            ...c,
+            avg: seen ? sum / seen : 0,
+            notStartedCount,
+            completeCount,
+            notStartedRate: seen ? notStartedCount / seen : 0,
+          };
+        });
+        const atRisk = sec.students.filter((s) => s.avg < threshold);
+        const startedCount = sec.students.filter((s) => Object.values(s.courseValues).some((cv) => !cv.notStarted)).length;
+        const notStartedCount = studentCount - startedCount;
+        return {
+          batch: sec.batch, branch: sec.branch, section: sec.section, label: sec.label,
+          fileName: Array.from(sec.fileNames).join(", "),
+          studentCount, avgOfAvgs, perCourse, atRisk, startedCount, notStartedCount,
+          students: sec.students, courses,
+        };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label));
 
     const totalStudents = sections.reduce((s, sec) => s + sec.studentCount, 0);
     const overallAvg = totalStudents
@@ -306,12 +349,18 @@ export default function CourseInsightsApp() {
       : 0;
     const totalAtRisk = sections.reduce((s, sec) => s + sec.atRisk.length, 0);
 
-    // password issues joined to sections
+    // password issues joined to sections — grouped the same way, by each
+    // entry's own Groups value, so a combined password export splits apart
+    // just like the combined course export does.
     const pwBySection = {};
     passwordFiles.forEach((f) => {
-      const key = f.meta.label;
-      if (!pwBySection[key]) pwBySection[key] = { meta: f.meta, entries: [] };
-      pwBySection[key].entries.push(...f.entries);
+      f.entries.forEach((entry) => {
+        const rawGroup = (entry.groups && String(entry.groups).trim()) || "";
+        const meta = parseSectionMeta(rawGroup, f.fileName);
+        const key = meta.label;
+        if (!pwBySection[key]) pwBySection[key] = { meta, entries: [] };
+        pwBySection[key].entries.push(entry);
+      });
     });
     const totalPasswordIssues = Object.values(pwBySection).reduce((s, g) => s + g.entries.length, 0);
 
@@ -357,19 +406,33 @@ export default function CourseInsightsApp() {
       })),
     }));
 
-    // all at-risk students flattened, sorted ascending by avg
-    const atRiskAll = sections
-      .flatMap((sec) => sec.atRisk.map((s) => ({
-        ...s,
-        sectionLabel: sec.label,
-        notStartedCourses: sec.courses.filter((c) => s.courseValues[c.key].notStarted).map((c) => c.label),
-      })))
-      .sort((a, b) => a.avg - b.avg);
+    // Every student, flattened across all sections, with section label and
+    // not-started course list attached — the base list the performance
+    // categories below are filtered from.
+    const allStudentsFlat = sections.flatMap((sec) => sec.students.map((s) => ({
+      ...s,
+      sectionLabel: sec.label,
+      notStartedCourses: sec.courses
+        .filter((c) => s.courseValues[c.key] && s.courseValues[c.key].notStarted)
+        .map((c) => c.label),
+    })));
 
-    const topPerformers = sections
-      .flatMap((sec) => sec.students.map((s) => ({ ...s, sectionLabel: sec.label })))
-      .sort((a, b) => b.avg - a.avg)
-      .slice(0, 5);
+    // Full-picture performance bands: everyone is shown, not just the
+    // at-risk group, so the report covers at-risk / average / good /
+    // excellent completion.
+    const categoryDefs = [
+      { key: "atRisk", title: "At Risk", range: `below ${threshold}%`, color: RUST, test: (avg) => avg < threshold },
+      { key: "average", title: "Average", range: `${threshold}%–69.9%`, color: GOLD, test: (avg) => avg >= threshold && avg < 70 },
+      { key: "good", title: "Good", range: "70%–89.9%", color: NAVY_SOFT, test: (avg) => avg >= 70 && avg < 90 },
+      { key: "excellent", title: "Excellent", range: "90% and above", color: GREEN, test: (avg) => avg >= 90 },
+    ];
+    const categorizedStudents = categoryDefs.map((c) => ({
+      ...c,
+      students: allStudentsFlat.filter((s) => c.test(s.avg)).sort((a, b) => a.avg - b.avg),
+    }));
+    const atRiskAll = categorizedStudents[0].students;
+
+    const topPerformers = [...allStudentsFlat].sort((a, b) => b.avg - a.avg).slice(0, 5);
 
     const sortedByAvg = [...sections].sort((a, b) => a.avgOfAvgs - b.avgOfAvgs);
     const weakestSection = sortedByAvg[0];
@@ -388,8 +451,8 @@ export default function CourseInsightsApp() {
 
     return {
       sections, totalStudents, overallAvg, totalAtRisk, pwBySection, totalPasswordIssues,
-      branchCharts, atRiskAll, topPerformers, weakestSection, strongestSection, weakestCourse,
-      batches, enrollment, enrollmentTotals,
+      branchCharts, allStudentsFlat, categorizedStudents, atRiskAll, topPerformers,
+      weakestSection, strongestSection, weakestCourse, batches, enrollment, enrollmentTotals,
     };
   }, [courseFiles, passwordFiles, threshold]);
 
@@ -596,7 +659,9 @@ export default function CourseInsightsApp() {
             </span>
           </div>
           <div style={{ color: "#B8C0D4", fontSize: 13, marginBottom: 18 }}>
-            Upload section-wise CodeTantra course reports to generate a single consolidated report for your SPOC.
+            Upload section-wise CodeTantra course reports — individual per-section files, or one combined workbook
+            with every section stacked together — to generate a single consolidated report for your SPOC. Sections
+            are always read from each row's "Groups" column.
           </div>
 
           <div style={{ display: "flex", gap: 20, flexWrap: "wrap", marginBottom: 18 }}>
@@ -667,7 +732,7 @@ export default function CourseInsightsApp() {
               {busy ? "Reading files…" : "Drop .xlsx files here, or click to browse"}
             </div>
             <div style={{ color: "#8B96B2", fontSize: 12, marginTop: 3 }}>
-              Group-wise course reports and password-not-set reports — any number of sections at once
+              Group-wise course reports and password-not-set reports — individual sections or one combined sheet, any number at once
             </div>
             <input
               ref={inputRef} type="file" multiple accept=".xlsx,.xls"
@@ -688,26 +753,42 @@ export default function CourseInsightsApp() {
 
           {(courseFiles.length > 0 || passwordFiles.length > 0) && (
             <div style={{ marginTop: 16, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-              {courseFiles.map((f) => (
-                <span key={f.fileName} style={{
-                  display: "inline-flex", alignItems: "center", gap: 6, background: "#233A63",
-                  color: "#fff", fontSize: 12, padding: "5px 6px 5px 10px", borderRadius: 20,
-                }}>
-                  <FileSpreadsheet size={12} color={GOLD_SOFT} />
-                  {f.meta.label} <span style={{ color: "#8B96B2" }}>· {f.students.length} students</span>
-                  <X size={13} style={{ cursor: "pointer", marginLeft: 2 }} onClick={() => removeCourseFile(f.fileName)} />
-                </span>
-              ))}
-              {passwordFiles.map((f) => (
-                <span key={f.fileName} style={{
-                  display: "inline-flex", alignItems: "center", gap: 6, background: "#5A3E1B",
-                  color: "#fff", fontSize: 12, padding: "5px 6px 5px 10px", borderRadius: 20,
-                }}>
-                  <KeyRound size={12} color={GOLD_SOFT} />
-                  {f.meta.label} <span style={{ color: "#C8B499" }}>· {f.entries.length} no password</span>
-                  <X size={13} style={{ cursor: "pointer", marginLeft: 2 }} onClick={() => removePasswordFile(f.fileName)} />
-                </span>
-              ))}
+              {courseFiles.map((f) => {
+                const distinctGroups = new Set(
+                  f.students.map((s) => (s.groups && String(s.groups).trim()) || "Unspecified")
+                ).size;
+                return (
+                  <span key={f.fileName} style={{
+                    display: "inline-flex", alignItems: "center", gap: 6, background: "#233A63",
+                    color: "#fff", fontSize: 12, padding: "5px 6px 5px 10px", borderRadius: 20,
+                  }}>
+                    <FileSpreadsheet size={12} color={GOLD_SOFT} />
+                    {f.fileName}{" "}
+                    <span style={{ color: "#8B96B2" }}>
+                      · {f.students.length} students{distinctGroups > 1 ? ` · ${distinctGroups} sections` : ""}
+                    </span>
+                    <X size={13} style={{ cursor: "pointer", marginLeft: 2 }} onClick={() => removeCourseFile(f.fileName)} />
+                  </span>
+                );
+              })}
+              {passwordFiles.map((f) => {
+                const distinctGroups = new Set(
+                  f.entries.map((e) => (e.groups && String(e.groups).trim()) || "Unspecified")
+                ).size;
+                return (
+                  <span key={f.fileName} style={{
+                    display: "inline-flex", alignItems: "center", gap: 6, background: "#5A3E1B",
+                    color: "#fff", fontSize: 12, padding: "5px 6px 5px 10px", borderRadius: 20,
+                  }}>
+                    <KeyRound size={12} color={GOLD_SOFT} />
+                    {f.fileName}{" "}
+                    <span style={{ color: "#C8B499" }}>
+                      · {f.entries.length} no password{distinctGroups > 1 ? ` · ${distinctGroups} sections` : ""}
+                    </span>
+                    <X size={13} style={{ cursor: "pointer", marginLeft: 2 }} onClick={() => removePasswordFile(f.fileName)} />
+                  </span>
+                );
+              })}
               <button className="cip-btn" onClick={clearAll} style={{
                 background: "none", color: "#8B96B2", fontSize: 12, textDecoration: "underline", padding: "4px 6px",
               }}>
@@ -772,7 +853,8 @@ export default function CourseInsightsApp() {
           <FileSpreadsheet size={36} color={PAPER_LINE} style={{ marginBottom: 10 }} />
           <div style={{ fontSize: 14 }}>
             Upload at least one group-wise course report to build the insights report.
-            Section and branch are read automatically from each file's "Groups" column.
+            Every section is read automatically from the "Groups" column on each row — whether that's
+            one file per section or a single combined workbook with all sections together.
           </div>
         </div>
       )}
@@ -810,6 +892,12 @@ export default function CourseInsightsApp() {
             <StatCard icon={GraduationCap} label="Sections Covered" value={insights.sections.length} accent={NAVY} />
             <StatCard icon={TrendingUp} label="Overall Avg. Completion" value={fmtPct(insights.overallAvg)} accent={barColor(insights.overallAvg)} />
             <StatCard icon={AlertTriangle} label={`At Risk (< ${threshold}%)`} value={insights.totalAtRisk} sub={`${((insights.totalAtRisk / insights.totalStudents) * 100 || 0).toFixed(1)}% of students`} accent={RUST} />
+            <StatCard
+              icon={TrendingUp}
+              label="Excellent (90%+)"
+              value={insights.categorizedStudents.find((c) => c.key === "excellent")?.students.length || 0}
+              accent={GREEN}
+            />
             <StatCard icon={KeyRound} label="Passwords Not Set" value={insights.totalPasswordIssues} accent={GOLD} />
           </div>
 
@@ -915,7 +1003,7 @@ export default function CourseInsightsApp() {
               starting a fresh page (which left huge blank gaps below short charts) */}
           {insights.sections.map((sec) => (
             <div
-              key={sec.fileName}
+              key={sec.label}
               data-pdf-block="true"
               className="cip-card cip-chart-card"
               style={{ background: "#fff", border: `1px solid ${PAPER_LINE}`, borderRadius: 4, padding: "18px 22px", marginBottom: 16 }}
@@ -944,7 +1032,7 @@ export default function CourseInsightsApp() {
               </thead>
               <tbody>
                 {insights.sections.map((s) => (
-                  <tr key={s.fileName}>
+                  <tr key={s.label}>
                     <td style={{ fontWeight: 600, color: NAVY }}>{s.label}</td>
                     <td>{s.studentCount}</td>
                     <td><span style={{ color: barColor(s.avgOfAvgs), fontWeight: 600 }}>{fmtPct(s.avgOfAvgs)}</span></td>
@@ -956,38 +1044,78 @@ export default function CourseInsightsApp() {
             </table>
           </div>
 
-          {/* at-risk students */}
-          <div data-pdf-block="true" className="cip-card" style={{ background: "#fff", border: `1px solid ${PAPER_LINE}`, borderRadius: 4, padding: "18px 22px", marginBottom: 26 }}>
-            <div style={{ fontFamily: "'Source Serif 4', Georgia, serif", fontSize: 16, fontWeight: 600, color: NAVY, marginBottom: 10 }}>
-              Students Needing Attention <span style={{ fontWeight: 400, fontSize: 12.5, color: SLATE }}>(average below {threshold}%)</span>
+          {/* student performance — everyone is shown, grouped into
+              at-risk / average / good / excellent completion bands, each
+              independently collapsible on screen (always fully rendered
+              for print/PDF export) */}
+          <div data-pdf-block="true" className="cip-card" style={{ background: "#fff", border: `1px solid ${PAPER_LINE}`, borderRadius: 4, padding: "18px 22px", marginBottom: 8 }}>
+            <div style={{ fontFamily: "'Source Serif 4', Georgia, serif", fontSize: 16, fontWeight: 600, color: NAVY }}>
+              Student Performance
             </div>
-            {insights.atRiskAll.length === 0 ? (
-              <div style={{ fontSize: 13, color: SLATE }}>No students fall below the current threshold.</div>
-            ) : (
-              <table className="cip-table">
-                <thead>
-                  <tr><th>Name</th><th>Section</th><th>Avg.</th><th>Courses not started</th></tr>
-                </thead>
-                <tbody>
-                  {insights.atRiskAll.map((s, i) => (
-                    <tr key={i}>
-                      <td>{s.name}</td>
-                      <td>{s.sectionLabel}</td>
-                      <td style={{ color: RUST, fontWeight: 600 }}>{fmtPct(s.avg)}</td>
-                      <td style={{ fontSize: 12, color: SLATE }}>{s.notStartedCourses.join(", ") || "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+            <div style={{ fontSize: 12, color: SLATE, marginTop: 4 }}>
+              All {insights.totalStudents} students, grouped by average completion band
+            </div>
           </div>
+
+          {insights.categorizedStudents.map((cat) => {
+            const stateKey = `perf-${cat.key}`;
+            const isOpen = expandedSections[stateKey] !== false;
+            return (
+              <div
+                key={cat.key}
+                data-pdf-block="true"
+                className="cip-card"
+                style={{
+                  background: "#fff", border: `1px solid ${PAPER_LINE}`, borderLeft: `4px solid ${cat.color}`,
+                  borderRadius: 4, padding: "14px 22px", marginBottom: 10,
+                }}
+              >
+                <div
+                  onClick={() => toggleSection(stateKey)}
+                  style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontWeight: 600, color: NAVY, fontSize: 13.5, marginBottom: 6 }}
+                  className="no-print"
+                >
+                  {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  {cat.title} <span style={{ fontWeight: 400, color: SLATE }}>({cat.range})</span>
+                  <span style={{ marginLeft: "auto", color: cat.color, fontWeight: 700 }}>{cat.students.length}</span>
+                </div>
+                {isOpen && (
+                  cat.students.length === 0 ? (
+                    <div style={{ fontSize: 13, color: SLATE }}>No students in this band.</div>
+                  ) : (
+                    <table className="cip-table">
+                      <thead>
+                        <tr>
+                          <th>Member Id</th><th>Name</th><th>Section</th><th>Avg.</th>
+                          {cat.key === "atRisk" && <th>Courses not started</th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {cat.students.map((s, i) => (
+                          <tr key={i}>
+                            <td style={{ fontSize: 12, color: SLATE }}>{s.id}</td>
+                            <td>{s.name}</td>
+                            <td>{s.sectionLabel}</td>
+                            <td style={{ color: cat.color, fontWeight: 600 }}>{fmtPct(s.avg)}</td>
+                            {cat.key === "atRisk" && (
+                              <td style={{ fontSize: 12, color: SLATE }}>{s.notStartedCourses.join(", ") || "—"}</td>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )
+                )}
+              </div>
+            );
+          })}
 
           {/* password not set — each group is its own export chunk so the PDF
               export doesn't have to rasterize potentially hundreds of student
               rows in a single pass */}
           {insights.totalPasswordIssues > 0 && (
             <>
-              <div data-pdf-block="true" className="cip-card" style={{ background: "#fff", border: `1px solid ${PAPER_LINE}`, borderRadius: 4, padding: "18px 22px", marginBottom: 8 }}>
+              <div data-pdf-block="true" className="cip-card" style={{ background: "#fff", border: `1px solid ${PAPER_LINE}`, borderRadius: 4, padding: "18px 22px", marginBottom: 8, marginTop: 16 }}>
                 <div style={{ fontFamily: "'Source Serif 4', Georgia, serif", fontSize: 16, fontWeight: 600, color: NAVY }}>
                   Passwords Not Set
                 </div>
