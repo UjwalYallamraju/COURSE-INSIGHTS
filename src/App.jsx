@@ -810,31 +810,28 @@ export default function CourseInsightsApp() {
             <div style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
                 <label style={{ color: "#B8C0D4", fontSize: 12.5, display: "flex", alignItems: "center", gap: 8 }}>
-                  At Risk below
+                  At-risk threshold (average % below)
                   <input
                     type="number" min={0} max={100} value={threshold}
                     onChange={(e) => setThreshold(Number(e.target.value) || 0)}
                     style={{ width: 56, padding: "4px 6px", borderRadius: 4, border: "1px solid #3E5079", background: "#152038", color: "#fff" }}
                   />
-                  %
                 </label>
                 <label style={{ color: "#B8C0D4", fontSize: 12.5, display: "flex", alignItems: "center", gap: 8 }}>
-                  Good from
+                  Good performance threshold (average % from)
                   <input
                     type="number" min={0} max={100} value={avgMax}
                     onChange={(e) => setAvgMax(Number(e.target.value) || 0)}
                     style={{ width: 56, padding: "4px 6px", borderRadius: 4, border: "1px solid #3E5079", background: "#152038", color: "#fff" }}
                   />
-                  %
                 </label>
                 <label style={{ color: "#B8C0D4", fontSize: 12.5, display: "flex", alignItems: "center", gap: 8 }}>
-                  Excellent from
+                  Excellent performance threshold (average % from)
                   <input
                     type="number" min={0} max={100} value={goodMax}
                     onChange={(e) => setGoodMax(Number(e.target.value) || 0)}
                     style={{ width: 56, padding: "4px 6px", borderRadius: 4, border: "1px solid #3E5079", background: "#152038", color: "#fff" }}
                   />
-                  %
                 </label>
               </div>
               <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
