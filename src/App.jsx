@@ -478,10 +478,14 @@ export default function CourseInsightsApp() {
     const cleanCollege = collegeName.trim();
     const escapedCollege = cleanCollege.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const docTitle = cleanCollege ? `${escapedCollege} — Course Progress Report` : "Course Progress Report";
+    const faviconHref = collegeLogo || "data:image/svg+xml," + encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="18" fill="${NAVY}"/><text x="50" y="66" font-size="58" text-anchor="middle">🎓</text></svg>`
+    );
     const doc = `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8" />
+<link rel="icon" href="${faviconHref}" />
 <title>${docTitle}</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
