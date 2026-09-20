@@ -1122,27 +1122,53 @@ export default function CourseInsightsApp() {
                   cat.students.length === 0 ? (
                     <div style={{ fontSize: 13, color: SLATE }}>No students in this band.</div>
                   ) : (
-                    <table className="cip-table">
-                      <thead>
-                        <tr>
-                          <th>Member Id</th><th>Name</th><th>Section</th><th>Avg.</th>
-                          {cat.key === "atRisk" && <th>Courses not started</th>}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {cat.students.map((s, i) => (
-                          <tr key={i}>
-                            <td style={{ fontSize: 12, color: SLATE }}>{s.id}</td>
-                            <td>{s.name}</td>
-                            <td>{s.sectionLabel}</td>
-                            <td style={{ color: cat.color, fontWeight: 600 }}>{fmtPct(s.avg)}</td>
-                            {cat.key === "atRisk" && (
-                              <td style={{ fontSize: 12, color: SLATE }}>{s.notStartedCourses.join(", ") || "—"}</td>
-                            )}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    (() => {
+                      // Group this band's students by their section so students
+                      // from the same group sit together under their own
+                      // sub-table, instead of one flat table mixing sections.
+                      const bySection = {};
+                      cat.students.forEach((s) => {
+                        (bySection[s.sectionLabel] ||= []).push(s);
+                      });
+                      const sectionKeys = Object.keys(bySection).sort((a, b) => a.localeCompare(b));
+                      return sectionKeys.map((secLabel) => (
+                        <div key={secLabel} style={{ marginBottom: 16 }}>
+                          <div style={{
+                            display: "flex", alignItems: "center", gap: 8, fontSize: 12.5,
+                            fontWeight: 600, color: NAVY_SOFT, margin: "4px 0 6px",
+                          }}>
+                            <span style={{
+                              display: "inline-block", fontFamily: "'Source Serif 4', Georgia, serif",
+                              color: NAVY_SOFT, background: "#EAF3F8", border: "1px solid #C7DFEA",
+                              borderRadius: 4, padding: "2px 8px",
+                            }}>
+                              {secLabel}
+                            </span>
+                            <span style={{ fontWeight: 400, color: SLATE }}>{bySection[secLabel].length} student{bySection[secLabel].length !== 1 ? "s" : ""}</span>
+                          </div>
+                          <table className="cip-table">
+                            <thead>
+                              <tr>
+                                <th>Member Id</th><th>Name</th><th>Avg.</th>
+                                {cat.key === "atRisk" && <th>Courses not started</th>}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {bySection[secLabel].map((s, i) => (
+                                <tr key={i}>
+                                  <td style={{ fontSize: 12, color: SLATE }}>{s.id}</td>
+                                  <td>{s.name}</td>
+                                  <td style={{ color: cat.color, fontWeight: 600 }}>{fmtPct(s.avg)}</td>
+                                  {cat.key === "atRisk" && (
+                                    <td style={{ fontSize: 12, color: SLATE }}>{s.notStartedCourses.join(", ") || "—"}</td>
+                                  )}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ));
+                    })()
                   )
                 )}
               </div>
