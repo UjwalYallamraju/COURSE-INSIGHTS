@@ -1149,7 +1149,7 @@ export default function CourseInsightsApp() {
                           <table className="cip-table">
                             <thead>
                               <tr>
-                                <th>Member Id</th><th>Name</th><th>Avg.</th>
+                                <th>Member Id</th><th>Name</th><th>Group</th><th>Avg.</th>
                                 {cat.key === "atRisk" && <th>Courses not started</th>}
                               </tr>
                             </thead>
@@ -1158,6 +1158,7 @@ export default function CourseInsightsApp() {
                                 <tr key={i}>
                                   <td style={{ fontSize: 12, color: SLATE }}>{s.id}</td>
                                   <td>{s.name}</td>
+                                  <td style={{ fontSize: 12, color: NAVY_SOFT, fontWeight: 600 }}>{s.sectionLabel}</td>
                                   <td style={{ color: cat.color, fontWeight: 600 }}>{fmtPct(s.avg)}</td>
                                   {cat.key === "atRisk" && (
                                     <td style={{ fontSize: 12, color: SLATE }}>{s.notStartedCourses.join(", ") || "—"}</td>
