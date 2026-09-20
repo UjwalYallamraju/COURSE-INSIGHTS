@@ -1146,7 +1146,14 @@ export default function CourseInsightsApp() {
                             </span>
                             <span style={{ fontWeight: 400, color: SLATE }}>{bySection[secLabel].length} student{bySection[secLabel].length !== 1 ? "s" : ""}</span>
                           </div>
-                          <table className="cip-table">
+                          <table className="cip-table" style={{ tableLayout: "fixed" }}>
+                            <colgroup>
+                              <col style={{ width: "14%" }} />
+                              <col style={{ width: cat.key === "atRisk" ? "22%" : "34%" }} />
+                              <col style={{ width: "20%" }} />
+                              <col style={{ width: "10%" }} />
+                              {cat.key === "atRisk" && <col style={{ width: "34%" }} />}
+                            </colgroup>
                             <thead>
                               <tr>
                                 <th>Member Id</th><th>Name</th><th>Group</th><th>Avg.</th>
