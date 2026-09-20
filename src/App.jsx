@@ -10,6 +10,8 @@ import {
 // ---------- constants ----------
 const NAVY = "#1B2A4A";
 const NAVY_SOFT = "#2E4269";
+const NAVY_DEEP = "#0F1930";
+const MIST = "#8C99BC";
 const GOLD = "#B8860F";
 const GOLD_SOFT = "#D9A93A";
 const PAPER = "#FAF7F0";
@@ -168,6 +170,22 @@ function barColor(v) {
   if (v >= 70) return GREEN;
   if (v >= 40) return GOLD_SOFT;
   return RUST;
+}
+
+// A single L-shaped corner mark. Four of these around a container read as a
+// document-intake tray / scan target rather than a generic dashed dropzone —
+// the one deliberate flourish on the upload screen.
+function CornerBracket({ position, color }) {
+  const size = 16;
+  const thickness = 2;
+  const base = { position: "absolute", width: size, height: size, transition: "border-color 0.15s" };
+  const sides = {
+    tl: { top: -1, left: -1, borderTop: `${thickness}px solid ${color}`, borderLeft: `${thickness}px solid ${color}` },
+    tr: { top: -1, right: -1, borderTop: `${thickness}px solid ${color}`, borderRight: `${thickness}px solid ${color}` },
+    bl: { bottom: -1, left: -1, borderBottom: `${thickness}px solid ${color}`, borderLeft: `${thickness}px solid ${color}` },
+    br: { bottom: -1, right: -1, borderBottom: `${thickness}px solid ${color}`, borderRight: `${thickness}px solid ${color}` },
+  };
+  return <div style={{ ...base, ...sides[position] }} />;
 }
 
 // Plain HTML/CSS horizontal bar rows — used instead of an SVG chart library so long
@@ -663,240 +681,284 @@ export default function CourseInsightsApp() {
       `}</style>
 
       {/* ---------- Upload / control zone (no-print) ---------- */}
-      <div className="no-print" style={{ background: NAVY, padding: "28px 32px 24px" }}>
-        <div style={{ maxWidth: 1080, margin: "0 auto" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-            <GraduationCap size={22} color={GOLD_SOFT} />
-            <span style={{ color: "#fff", fontFamily: "'Source Serif 4', Georgia, serif", fontSize: 20, fontWeight: 600 }}>
-              Course Progress Insights
-            </span>
-          </div>
-          <div style={{ color: "#B8C0D4", fontSize: 13, marginBottom: 18 }}>
-            Upload section-wise CodeTantra course reports — individual per-section files, or one combined workbook
-            with every section stacked together — to generate a single consolidated report for your SPOC. Sections
-            are always read from each row's "Groups" column.
-          </div>
+      <div className="no-print" style={{ background: `linear-gradient(180deg, ${NAVY} 0%, ${NAVY_DEEP} 100%)` }}>
+        <div style={{ height: 3, background: `linear-gradient(90deg, transparent, ${GOLD_SOFT}, transparent)` }} />
+        <div style={{ padding: "34px 32px 26px" }}>
+          <div style={{ maxWidth: 1080, margin: "0 auto" }}>
 
-          <div style={{ display: "flex", gap: 20, flexWrap: "wrap", marginBottom: 18 }}>
-            <label style={{ display: "block", flex: "1 1 320px" }}>
-              <div style={{ color: "#B8C0D4", fontSize: 12.5, marginBottom: 5 }}>College / Institute name (shown on the report)</div>
-              <input
-                type="text"
-                value={collegeName}
-                onChange={(e) => setCollegeName(e.target.value)}
-                placeholder="e.g. Sreenidhi Institute of Science and Technology"
-                style={{
-                  width: "100%", maxWidth: 420, padding: "8px 10px", borderRadius: 4,
-                  border: "1px solid #3E5079", background: "#152038", color: "#fff", fontSize: 13.5,
-                }}
-              />
-            </label>
+            {/* masthead: seal + wordmark beside the document-intake tray */}
+            <div style={{ display: "flex", gap: 36, flexWrap: "wrap", marginBottom: 24 }}>
+              <div style={{ flex: "1 1 360px", minWidth: 280 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
+                  <div style={{
+                    width: 46, height: 46, borderRadius: "50%", border: `1.5px solid ${GOLD_SOFT}`,
+                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                    background: "rgba(217,169,58,0.06)",
+                  }}>
+                    <GraduationCap size={20} color={GOLD_SOFT} />
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: "'Source Serif 4', Georgia, serif", fontSize: 25, fontWeight: 700, color: "#fff", lineHeight: 1.15 }}>
+                      Course Progress Insights
+                    </div>
+                    <div style={{ fontFamily: "'Source Serif 4', Georgia, serif", fontStyle: "italic", fontSize: 13.5, color: GOLD_SOFT, marginTop: 3 }}>
+                      Compiled for your SPOC, section by section
+                    </div>
+                  </div>
+                </div>
+                <div style={{ color: MIST, fontSize: 13, lineHeight: 1.75, maxWidth: 440 }}>
+                  Upload section-wise CodeTantra course reports — individual per-section files, or one combined
+                  workbook with every section stacked together. Sections are always read from each row's
+                  "Groups" column, and everything compiles into a single consolidated report.
+                </div>
+              </div>
 
-            <div style={{ flex: "0 0 auto" }}>
-              <div style={{ color: "#B8C0D4", fontSize: 12.5, marginBottom: 5 }}>College logo (optional)</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                {collegeLogo && (
-                  <img
-                    src={collegeLogo} alt="College logo preview"
-                    style={{ height: 34, maxWidth: 90, objectFit: "contain", background: "#fff", borderRadius: 3, padding: 2 }}
-                  />
-                )}
-                <button
-                  type="button"
-                  className="cip-btn"
-                  onClick={() => logoInputRef.current?.click()}
+              <div style={{ flex: "1 1 320px", minWidth: 280 }}>
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={onDrop}
+                  onClick={() => inputRef.current?.click()}
                   style={{
-                    background: "rgba(255,255,255,0.06)", color: "#fff", fontSize: 12.5,
-                    border: "1px solid #3E5079", borderRadius: 4, padding: "7px 12px",
+                    position: "relative", border: `1px solid ${dragOver ? GOLD_SOFT : "rgba(217,169,58,0.22)"}`,
+                    borderRadius: 3, padding: "28px 22px", textAlign: "center", cursor: "pointer",
+                    background: dragOver ? "rgba(217,169,58,0.08)" : "rgba(255,255,255,0.02)",
+                    transition: "all 0.15s", height: "100%", boxSizing: "border-box",
                   }}
                 >
-                  {collegeLogo ? "Change logo" : "Upload logo"}
-                </button>
-                {collegeLogo && (
-                  <X
-                    size={16}
-                    style={{ cursor: "pointer", color: "#8B96B2" }}
-                    onClick={() => setCollegeLogo("")}
+                  <CornerBracket position="tl" color={dragOver ? GOLD_SOFT : "rgba(217,169,58,0.4)"} />
+                  <CornerBracket position="tr" color={dragOver ? GOLD_SOFT : "rgba(217,169,58,0.4)"} />
+                  <CornerBracket position="bl" color={dragOver ? GOLD_SOFT : "rgba(217,169,58,0.4)"} />
+                  <CornerBracket position="br" color={dragOver ? GOLD_SOFT : "rgba(217,169,58,0.4)"} />
+                  <UploadCloud size={24} color={GOLD_SOFT} style={{ marginBottom: 8 }} />
+                  <div style={{ color: "#fff", fontSize: 14, fontWeight: 500 }}>
+                    {busy ? "Reading files…" : "Drop .xlsx files here, or click to browse"}
+                  </div>
+                  <div style={{ color: MIST, fontSize: 12, marginTop: 4, lineHeight: 1.6 }}>
+                    Group-wise course reports and password-not-set reports — individual sections or one
+                    combined sheet, any number at once
+                  </div>
+                  <input
+                    ref={inputRef} type="file" multiple accept=".xlsx,.xls"
+                    style={{ display: "none" }}
+                    onChange={(e) => e.target.files?.length && handleFiles(e.target.files)}
                   />
-                )}
+                </div>
+              </div>
+            </div>
+
+            {/* letterhead fields — college name & logo, set off from the masthead by a hairline */}
+            <div style={{
+              borderTop: "1px solid rgba(255,255,255,0.09)", paddingTop: 18,
+              display: "flex", gap: 20, flexWrap: "wrap",
+            }}>
+              <label style={{ display: "block", flex: "1 1 320px" }}>
+                <div style={{ color: MIST, fontSize: 12.5, marginBottom: 5 }}>College / Institute name (shown on the report)</div>
                 <input
-                  ref={logoInputRef} type="file" accept="image/*"
-                  style={{ display: "none" }}
-                  onChange={(e) => handleLogoFile(e.target.files?.[0])}
+                  type="text"
+                  value={collegeName}
+                  onChange={(e) => setCollegeName(e.target.value)}
+                  placeholder="e.g. Sreenidhi Institute of Science and Technology"
+                  style={{
+                    width: "100%", maxWidth: 420, padding: "8px 10px", borderRadius: 4,
+                    border: "1px solid #3E5079", background: "#152038", color: "#fff", fontSize: 13.5,
+                  }}
                 />
-              </div>
-            </div>
-          </div>
+              </label>
 
-          <div
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={onDrop}
-            onClick={() => inputRef.current?.click()}
-            style={{
-              border: `2px dashed ${dragOver ? GOLD_SOFT : "#3E5079"}`, borderRadius: 6,
-              padding: "22px 20px", textAlign: "center", cursor: "pointer",
-              background: dragOver ? "rgba(217,169,58,0.08)" : "rgba(255,255,255,0.03)",
-              transition: "all 0.15s",
-            }}
-          >
-            <UploadCloud size={26} color={GOLD_SOFT} style={{ marginBottom: 6 }} />
-            <div style={{ color: "#fff", fontSize: 14, fontWeight: 500 }}>
-              {busy ? "Reading files…" : "Drop .xlsx files here, or click to browse"}
-            </div>
-            <div style={{ color: "#8B96B2", fontSize: 12, marginTop: 3 }}>
-              Group-wise course reports and password-not-set reports — individual sections or one combined sheet, any number at once
-            </div>
-            <input
-              ref={inputRef} type="file" multiple accept=".xlsx,.xls"
-              style={{ display: "none" }}
-              onChange={(e) => e.target.files?.length && handleFiles(e.target.files)}
-            />
-          </div>
-
-          {fileErrors.length > 0 && (
-            <div style={{ marginTop: 12, background: "rgba(168,69,47,0.15)", border: `1px solid ${RUST}`, borderRadius: 4, padding: "10px 14px" }}>
-              {fileErrors.map((e, i) => (
-                <div key={i} style={{ color: "#F3C9BE", fontSize: 12.5, display: "flex", gap: 6, alignItems: "flex-start" }}>
-                  <AlertTriangle size={13} style={{ marginTop: 2, flexShrink: 0 }} /> {e}
+              <div style={{ flex: "0 0 auto" }}>
+                <div style={{ color: MIST, fontSize: 12.5, marginBottom: 5 }}>College logo (optional)</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  {collegeLogo && (
+                    <img
+                      src={collegeLogo} alt="College logo preview"
+                      style={{ height: 34, maxWidth: 90, objectFit: "contain", background: "#fff", borderRadius: 3, padding: 2 }}
+                    />
+                  )}
+                  <button
+                    type="button"
+                    className="cip-btn"
+                    onClick={() => logoInputRef.current?.click()}
+                    style={{
+                      background: "rgba(255,255,255,0.06)", color: "#fff", fontSize: 12.5,
+                      border: "1px solid #3E5079", borderRadius: 4, padding: "7px 12px",
+                    }}
+                  >
+                    {collegeLogo ? "Change logo" : "Upload logo"}
+                  </button>
+                  {collegeLogo && (
+                    <X
+                      size={16}
+                      style={{ cursor: "pointer", color: MIST }}
+                      onClick={() => setCollegeLogo("")}
+                    />
+                  )}
+                  <input
+                    ref={logoInputRef} type="file" accept="image/*"
+                    style={{ display: "none" }}
+                    onChange={(e) => handleLogoFile(e.target.files?.[0])}
+                  />
                 </div>
-              ))}
-            </div>
-          )}
-
-          {(courseFiles.length > 0 || passwordFiles.length > 0) && (
-            <div style={{ marginTop: 16, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-              {courseFiles.map((f) => {
-                const distinctGroups = new Set(
-                  f.students.map((s) => (s.groups && String(s.groups).trim()) || "Unspecified")
-                ).size;
-                return (
-                  <span key={f.fileName} style={{
-                    display: "inline-flex", alignItems: "center", gap: 6, background: "#233A63",
-                    color: "#fff", fontSize: 12, padding: "5px 6px 5px 10px", borderRadius: 20,
-                  }}>
-                    <FileSpreadsheet size={12} color={GOLD_SOFT} />
-                    {f.fileName}{" "}
-                    <span style={{ color: "#8B96B2" }}>
-                      · {f.students.length} students{distinctGroups > 1 ? ` · ${distinctGroups} sections` : ""}
-                    </span>
-                    <X size={13} style={{ cursor: "pointer", marginLeft: 2 }} onClick={() => removeCourseFile(f.fileName)} />
-                  </span>
-                );
-              })}
-              {passwordFiles.map((f) => {
-                const distinctGroups = new Set(
-                  f.entries.map((e) => (e.groups && String(e.groups).trim()) || "Unspecified")
-                ).size;
-                return (
-                  <span key={f.fileName} style={{
-                    display: "inline-flex", alignItems: "center", gap: 6, background: "#5A3E1B",
-                    color: "#fff", fontSize: 12, padding: "5px 6px 5px 10px", borderRadius: 20,
-                  }}>
-                    <KeyRound size={12} color={GOLD_SOFT} />
-                    {f.fileName}{" "}
-                    <span style={{ color: "#C8B499" }}>
-                      · {f.entries.length} no password{distinctGroups > 1 ? ` · ${distinctGroups} sections` : ""}
-                    </span>
-                    <X size={13} style={{ cursor: "pointer", marginLeft: 2 }} onClick={() => removePasswordFile(f.fileName)} />
-                  </span>
-                );
-              })}
-              <button className="cip-btn" onClick={clearAll} style={{
-                background: "none", color: "#8B96B2", fontSize: 12, textDecoration: "underline", padding: "4px 6px",
-              }}>
-                clear all
-              </button>
-            </div>
-          )}
-
-          {insights && (
-            <div style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-                <label style={{ color: "#B8C0D4", fontSize: 12.5, display: "flex", alignItems: "center", gap: 8 }}>
-                  At-risk threshold (average % below)
-                  <input
-                    type="number" min={0} max={100} value={threshold}
-                    onChange={(e) => setThreshold(Number(e.target.value) || 0)}
-                    style={{ width: 56, padding: "4px 6px", borderRadius: 4, border: "1px solid #3E5079", background: "#152038", color: "#fff" }}
-                  />
-                </label>
-                <label style={{ color: "#B8C0D4", fontSize: 12.5, display: "flex", alignItems: "center", gap: 8 }}>
-                  Average performance threshold (average % from)
-                  <input
-                    type="number" min={0} max={100} value={threshold}
-                    onChange={(e) => setThreshold(Number(e.target.value) || 0)}
-                    style={{ width: 56, padding: "4px 6px", borderRadius: 4, border: "1px solid #3E5079", background: "#152038", color: "#fff" }}
-                  />
-                </label>
-                <label style={{ color: "#B8C0D4", fontSize: 12.5, display: "flex", alignItems: "center", gap: 8 }}>
-                  Good performance threshold (average % from)
-                  <input
-                    type="number" min={0} max={100} value={avgMax}
-                    onChange={(e) => setAvgMax(Number(e.target.value) || 0)}
-                    style={{ width: 56, padding: "4px 6px", borderRadius: 4, border: "1px solid #3E5079", background: "#152038", color: "#fff" }}
-                  />
-                </label>
-                <label style={{ color: "#B8C0D4", fontSize: 12.5, display: "flex", alignItems: "center", gap: 8 }}>
-                  Excellent performance threshold (average % from)
-                  <input
-                    type="number" min={0} max={100} value={goodMax}
-                    onChange={(e) => setGoodMax(Number(e.target.value) || 0)}
-                    style={{ width: 56, padding: "4px 6px", borderRadius: 4, border: "1px solid #3E5079", background: "#152038", color: "#fff" }}
-                  />
-                </label>
               </div>
-              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-                <button
-                  className="cip-btn"
-                  onClick={downloadReport}
-                  style={{
-                    display: "inline-flex", alignItems: "center", gap: 6,
-                    background: "none", color: "#B8C0D4", fontSize: 12.5,
-                    padding: "9px 4px", textDecoration: "underline",
-                  }}
-                >
-                  Download as HTML instead
-                </button>
-                <button
-                  className="cip-btn"
-                  onClick={downloadPdf}
-                  disabled={generatingPdf}
-                  style={{
-                    display: "inline-flex", alignItems: "center", gap: 8,
-                    background: GOLD_SOFT, color: NAVY, fontWeight: 600, fontSize: 13.5,
-                    padding: "9px 18px", borderRadius: 4,
-                  }}
-                >
-                  <Download size={15} />
-                  {generatingPdf
-                    ? pdfProgress.total > 0
-                      ? `Generating PDF… (${pdfProgress.done}/${pdfProgress.total})`
-                      : "Generating PDF…"
-                    : "Download PDF report"}
+            </div>
+
+            {fileErrors.length > 0 && (
+              <div style={{ marginTop: 16, background: "rgba(168,69,47,0.15)", border: `1px solid ${RUST}`, borderRadius: 4, padding: "10px 14px" }}>
+                {fileErrors.map((e, i) => (
+                  <div key={i} style={{ color: "#F3C9BE", fontSize: 12.5, display: "flex", gap: 6, alignItems: "flex-start" }}>
+                    <AlertTriangle size={13} style={{ marginTop: 2, flexShrink: 0 }} /> {e}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {(courseFiles.length > 0 || passwordFiles.length > 0) && (
+              <div style={{ marginTop: 16, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                {courseFiles.map((f) => {
+                  const distinctGroups = new Set(
+                    f.students.map((s) => (s.groups && String(s.groups).trim()) || "Unspecified")
+                  ).size;
+                  return (
+                    <span key={f.fileName} style={{
+                      display: "inline-flex", alignItems: "center", gap: 6,
+                      background: "rgba(255,255,255,0.04)", border: "1px solid rgba(217,169,58,0.28)",
+                      color: "#fff", fontSize: 12, padding: "5px 6px 5px 10px", borderRadius: 3,
+                    }}>
+                      <FileSpreadsheet size={12} color={GOLD_SOFT} />
+                      {f.fileName}{" "}
+                      <span style={{ color: MIST }}>
+                        · {f.students.length} students{distinctGroups > 1 ? ` · ${distinctGroups} sections` : ""}
+                      </span>
+                      <X size={13} style={{ cursor: "pointer", marginLeft: 2 }} onClick={() => removeCourseFile(f.fileName)} />
+                    </span>
+                  );
+                })}
+                {passwordFiles.map((f) => {
+                  const distinctGroups = new Set(
+                    f.entries.map((e) => (e.groups && String(e.groups).trim()) || "Unspecified")
+                  ).size;
+                  return (
+                    <span key={f.fileName} style={{
+                      display: "inline-flex", alignItems: "center", gap: 6,
+                      background: "rgba(255,255,255,0.04)", border: "1px solid rgba(217,169,58,0.28)",
+                      color: "#fff", fontSize: 12, padding: "5px 6px 5px 10px", borderRadius: 3,
+                    }}>
+                      <KeyRound size={12} color={GOLD_SOFT} />
+                      {f.fileName}{" "}
+                      <span style={{ color: MIST }}>
+                        · {f.entries.length} no password{distinctGroups > 1 ? ` · ${distinctGroups} sections` : ""}
+                      </span>
+                      <X size={13} style={{ cursor: "pointer", marginLeft: 2 }} onClick={() => removePasswordFile(f.fileName)} />
+                    </span>
+                  );
+                })}
+                <button className="cip-btn" onClick={clearAll} style={{
+                  background: "none", color: MIST, fontSize: 12, textDecoration: "underline", padding: "4px 6px",
+                }}>
+                  clear all
                 </button>
               </div>
-              {pdfError && (
-                <div style={{ width: "100%", color: "#F3C9BE", fontSize: 12.5, display: "flex", gap: 6, alignItems: "flex-start" }}>
-                  <AlertTriangle size={13} style={{ marginTop: 2, flexShrink: 0 }} /> {pdfError}
+            )}
+
+            {insights && (
+              <div style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+                  <label style={{ color: MIST, fontSize: 12.5, display: "flex", alignItems: "center", gap: 8 }}>
+                    At-risk threshold (average % below)
+                    <input
+                      type="number" min={0} max={100} value={threshold}
+                      onChange={(e) => setThreshold(Number(e.target.value) || 0)}
+                      style={{ width: 56, padding: "4px 6px", borderRadius: 4, border: "1px solid #3E5079", background: "#152038", color: "#fff" }}
+                    />
+                  </label>
+                  <label style={{ color: MIST, fontSize: 12.5, display: "flex", alignItems: "center", gap: 8 }}>
+                    Average performance threshold (average % from)
+                    <input
+                      type="number" min={0} max={100} value={threshold}
+                      onChange={(e) => setThreshold(Number(e.target.value) || 0)}
+                      style={{ width: 56, padding: "4px 6px", borderRadius: 4, border: "1px solid #3E5079", background: "#152038", color: "#fff" }}
+                    />
+                  </label>
+                  <label style={{ color: MIST, fontSize: 12.5, display: "flex", alignItems: "center", gap: 8 }}>
+                    Good performance threshold (average % from)
+                    <input
+                      type="number" min={0} max={100} value={avgMax}
+                      onChange={(e) => setAvgMax(Number(e.target.value) || 0)}
+                      style={{ width: 56, padding: "4px 6px", borderRadius: 4, border: "1px solid #3E5079", background: "#152038", color: "#fff" }}
+                    />
+                  </label>
+                  <label style={{ color: MIST, fontSize: 12.5, display: "flex", alignItems: "center", gap: 8 }}>
+                    Excellent performance threshold (average % from)
+                    <input
+                      type="number" min={0} max={100} value={goodMax}
+                      onChange={(e) => setGoodMax(Number(e.target.value) || 0)}
+                      style={{ width: 56, padding: "4px 6px", borderRadius: 4, border: "1px solid #3E5079", background: "#152038", color: "#fff" }}
+                    />
+                  </label>
                 </div>
-              )}
-            </div>
-          )}
+                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+                  <button
+                    className="cip-btn"
+                    onClick={downloadReport}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 6,
+                      background: "none", color: MIST, fontSize: 12.5,
+                      padding: "9px 4px", textDecoration: "underline",
+                    }}
+                  >
+                    Download as HTML instead
+                  </button>
+                  <button
+                    className="cip-btn"
+                    onClick={downloadPdf}
+                    disabled={generatingPdf}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 8,
+                      background: `linear-gradient(180deg, ${GOLD_SOFT}, ${GOLD})`, color: NAVY, fontWeight: 600, fontSize: 13.5,
+                      padding: "9px 18px", borderRadius: 4, border: "none",
+                    }}
+                  >
+                    <Download size={15} />
+                    {generatingPdf
+                      ? pdfProgress.total > 0
+                        ? `Generating PDF… (${pdfProgress.done}/${pdfProgress.total})`
+                        : "Generating PDF…"
+                      : "Download PDF report"}
+                  </button>
+                </div>
+                {pdfError && (
+                  <div style={{ width: "100%", color: "#F3C9BE", fontSize: 12.5, display: "flex", gap: 6, alignItems: "flex-start" }}>
+                    <AlertTriangle size={13} style={{ marginTop: 2, flexShrink: 0 }} /> {pdfError}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* ---------- Report ---------- */}
       {!insights && (
-        <div style={{ maxWidth: 640, margin: "60px auto", textAlign: "center", color: SLATE }}>
-          <FileSpreadsheet size={36} color={PAPER_LINE} style={{ marginBottom: 10 }} />
-          <div style={{ fontSize: 14 }}>
-            Upload at least one group-wise course report to build the insights report.
-            Every section is read automatically from the "Groups" column on each row — whether that's
-            one file per section or a single combined workbook with all sections together.
+        <div style={{ maxWidth: 560, margin: "56px auto", textAlign: "center" }}>
+          <div style={{ background: "#fff", border: `1px solid ${PAPER_LINE}`, borderRadius: 4, padding: "40px 32px" }}>
+            <div style={{
+              width: 48, height: 48, borderRadius: "50%", border: `1.5px solid ${GOLD_SOFT}`,
+              display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px",
+            }}>
+              <FileSpreadsheet size={20} color={GOLD} />
+            </div>
+            <div style={{ fontFamily: "'Source Serif 4', Georgia, serif", fontSize: 19, fontWeight: 600, color: NAVY, marginBottom: 8 }}>
+              Awaiting your first report
+            </div>
+            <div style={{ fontSize: 13.5, color: SLATE, lineHeight: 1.75 }}>
+              Upload at least one group-wise course report above to build the insights report. Every section
+              is read automatically from the "Groups" column on each row — one file per section, or a single
+              combined workbook with all sections together.
+            </div>
           </div>
         </div>
       )}
+
 
       {insights && (
         <div ref={reportRef} className="cip-page" style={{ maxWidth: 1080, margin: "28px auto 0", padding: "0 32px" }}>
