@@ -358,25 +358,30 @@ export default function CourseInsightsApp() {
         const avgOfAvgs = evaluableStudents.length
           ? evaluableStudents.reduce((s, st) => s + st.avg, 0) / evaluableStudents.length
           : 0;
-        const perCourse = courses.map((c) => {
-          let sum = 0, notStartedCount = 0, completeCount = 0, seen = 0;
-          sec.students.forEach((st) => {
-            const cv = st.courseValues[c.key];
-            if (!cv || !cv.enabled) return; // course wasn't provided, or is explicitly "--" (not enabled) for this student
-            seen++;
-            sum += cv.value;
-            if (cv.notStarted) notStartedCount++;
-            if (cv.value >= COMPLETE_THRESHOLD) completeCount++;
-          });
-          return {
-            ...c,
-            avg: seen ? sum / seen : 0,
-            notStartedCount,
-            completeCount,
-            notStartedRate: seen ? notStartedCount / seen : 0,
-            enabledCount: seen,
-          };
-        });
+        const perCourse = courses
+          .map((c) => {
+            let sum = 0, notStartedCount = 0, completeCount = 0, seen = 0;
+            sec.students.forEach((st) => {
+              const cv = st.courseValues[c.key];
+              if (!cv || !cv.enabled) return; // course wasn't provided, or is explicitly "--" (not enabled) for this student
+              seen++;
+              sum += cv.value;
+              if (cv.notStarted) notStartedCount++;
+              if (cv.value >= COMPLETE_THRESHOLD) completeCount++;
+            });
+            return {
+              ...c,
+              avg: seen ? sum / seen : 0,
+              notStartedCount,
+              completeCount,
+              notStartedRate: seen ? notStartedCount / seen : 0,
+              enabledCount: seen,
+            };
+          })
+          // A course nobody in this section has enabled (every student showed
+          // "--" for it) isn't part of this section's curriculum at all —
+          // drop it here so it doesn't show up as a misleading 0.0% bar.
+          .filter((c) => c.enabledCount > 0);
         const atRisk = evaluableStudents.filter((s) => s.avg < threshold);
         const startedCount = sec.students.filter((s) => Object.values(s.courseValues).some((cv) => cv.enabled && !cv.notStarted)).length;
         const notApplicableCount = sec.students.filter((s) => s.avg === null).length;
@@ -1191,10 +1196,14 @@ export default function CourseInsightsApp() {
                 Course-wise Average Completion — {sec.label}
               </div>
               <div style={{ fontSize: 12, color: SLATE, marginBottom: 14 }}>{sec.studentCount} students in this section</div>
-              <BarRows
-                rows={sec.perCourse.map((c) => ({ label: c.label, value: c.avg, color: barColor(c.avg) }))}
-                labelWidth={260}
-              />
+              {sec.perCourse.length === 0 ? (
+                <div style={{ fontSize: 13, color: SLATE }}>None of the uploaded courses are enabled for this section.</div>
+              ) : (
+                <BarRows
+                  rows={sec.perCourse.map((c) => ({ label: c.label, value: c.avg, color: barColor(c.avg) }))}
+                  labelWidth={260}
+                />
+              )}
             </div>
           ))}
 
