@@ -1308,21 +1308,23 @@ export default function CourseInsightsApp() {
                           </div>
                           <table className="cip-table" style={{ tableLayout: "fixed" }}>
                             <colgroup>
-                              <col style={{ width: "14%" }} />
-                              <col style={{ width: cat.key === "atRisk" ? "22%" : "34%" }} />
-                              <col style={{ width: "20%" }} />
-                              <col style={{ width: "10%" }} />
-                              {cat.key === "atRisk" && <col style={{ width: "34%" }} />}
+                              <col style={{ width: "6%" }} />
+                              <col style={{ width: "13%" }} />
+                              <col style={{ width: cat.key === "atRisk" ? "21%" : "33%" }} />
+                              <col style={{ width: "19%" }} />
+                              <col style={{ width: "9%" }} />
+                              {cat.key === "atRisk" && <col style={{ width: "32%" }} />}
                             </colgroup>
                             <thead>
                               <tr>
-                                <th>Member Id</th><th>Name</th><th>Group</th><th>Avg.</th>
+                                <th>S.No</th><th>Member Id</th><th>Name</th><th>Group</th><th>Avg.</th>
                                 {cat.key === "atRisk" && <th>Courses not started</th>}
                               </tr>
                             </thead>
                             <tbody>
                               {bySection[secLabel].map((s, i) => (
                                 <tr key={i}>
+                                  <td style={{ fontSize: 12, color: SLATE }}>{i + 1}</td>
                                   <td style={{ fontSize: 12, color: SLATE }}>{s.id}</td>
                                   <td>{s.name}</td>
                                   <td style={{ fontSize: 12, color: NAVY_SOFT, fontWeight: 600 }}>{s.sectionLabel}</td>
@@ -1370,10 +1372,10 @@ export default function CourseInsightsApp() {
                   </div>
                   {expandedSections[label] === false ? null : (
                     <table className="cip-table">
-                      <thead><tr><th>Name</th><th>Email</th><th>Account Created</th></tr></thead>
+                      <thead><tr><th style={{ width: "8%" }}>S.No</th><th>Name</th><th>Email</th><th>Account Created</th></tr></thead>
                       <tbody>
                         {g.entries.map((e, i) => (
-                          <tr key={i}><td>{e.name}</td><td>{e.email}</td><td>{e.createdTime}</td></tr>
+                          <tr key={i}><td style={{ fontSize: 12, color: SLATE }}>{i + 1}</td><td>{e.name}</td><td>{e.email}</td><td>{e.createdTime}</td></tr>
                         ))}
                       </tbody>
                     </table>
