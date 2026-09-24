@@ -533,7 +533,7 @@ export default function CourseInsightsApp() {
     const notApplicableFlat = allStudentsFlat.filter((s) => s.avg === null);
     const categorizedStudents = categoryDefs.map((c) => ({
       ...c,
-      students: evaluableFlat.filter((s) => c.test(s.avg)).sort((a, b) => a.avg - b.avg),
+      students: evaluableFlat.filter((s) => c.test(s.avg)).sort((a, b) => b.avg - a.avg),
     }));
     if (notApplicableFlat.length) {
       categorizedStudents.push({
