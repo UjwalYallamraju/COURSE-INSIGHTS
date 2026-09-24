@@ -24,14 +24,29 @@ const RUST = "#A8452F";
 const COMPLETE_THRESHOLD = 99.5;
 
 // ---------- helpers ----------
+// A course cell can mean three different things, and conflating them skews
+// every average: a real percentage (progress), explicit "0.00 (Not Started)"
+// text or a bare 0 (enrolled, hasn't begun), or "--" / blank-ish placeholder
+// text (this course isn't even enabled for this student/section). Only the
+// first two should count toward completion math; "--" must be excluded
+// entirely rather than silently treated as 0%.
 function parseCell(raw) {
-  if (raw === null || raw === undefined || raw === "") return { value: 0, notStarted: true };
-  if (typeof raw === "number") return { value: raw, notStarted: raw <= 0 };
-  const str = String(raw);
+  if (raw === null || raw === undefined || raw === "") {
+    // A genuinely blank cell is treated as "enrolled, hasn't started" — distinct
+    // from an explicit "--" placeholder, which means the course doesn't apply.
+    return { value: 0, notStarted: true, enabled: true };
+  }
+  if (typeof raw === "number") return { value: raw, notStarted: raw <= 0, enabled: true };
+  const str = String(raw).trim();
+  // "--", "-", "—", "N/A", "NA" and similar dash/placeholder tokens with no digits
+  // mean the course isn't enabled for this student/section — exclude entirely.
+  if (!/\d/.test(str)) {
+    return { value: null, notStarted: false, enabled: false };
+  }
   const match = str.match(/-?\d+(\.\d+)?/);
   const num = match ? parseFloat(match[0]) : 0;
   const notStarted = /not started/i.test(str) || num <= 0;
-  return { value: num, notStarted };
+  return { value: num, notStarted, enabled: true };
 }
 
 // Section identity always comes from the actual "Groups" column value on the
@@ -118,12 +133,16 @@ async function parseWorkbook(file) {
     const students = body.map((r) => {
       const courseValues = {};
       let sum = 0;
+      let enabledCount = 0;
       courseIdxs.forEach(({ h, i }) => {
-        const { value, notStarted } = parseCell(r[i]);
-        courseValues[h] = { value, notStarted };
-        sum += value;
+        const { value, notStarted, enabled } = parseCell(r[i]);
+        courseValues[h] = { value, notStarted, enabled };
+        if (enabled) { sum += value; enabledCount++; }
       });
-      const avg = courseIdxs.length ? sum / courseIdxs.length : 0;
+      // avg is null (not 0) when every course is "--" for this student — they
+      // simply have no applicable course in this file, which is different
+      // from having 0% progress on courses that do apply to them.
+      const avg = enabledCount ? sum / enabledCount : null;
       return {
         id: idIdx >= 0 ? r[idIdx] : "",
         name: nameIdx >= 0 ? r[nameIdx] : "",
@@ -332,12 +351,18 @@ export default function CourseInsightsApp() {
       .map((sec) => {
         const courses = Array.from(sec.courseMap.values());
         const studentCount = sec.students.length;
-        const avgOfAvgs = studentCount ? sec.students.reduce((s, st) => s + st.avg, 0) / studentCount : 0;
+        // Students with avg === null have no course in this file enabled for
+        // them at all ("--" everywhere) — exclude them from the average so
+        // they don't quietly drag the section's completion rate toward 0.
+        const evaluableStudents = sec.students.filter((s) => s.avg !== null);
+        const avgOfAvgs = evaluableStudents.length
+          ? evaluableStudents.reduce((s, st) => s + st.avg, 0) / evaluableStudents.length
+          : 0;
         const perCourse = courses.map((c) => {
           let sum = 0, notStartedCount = 0, completeCount = 0, seen = 0;
           sec.students.forEach((st) => {
             const cv = st.courseValues[c.key];
-            if (!cv) return; // this student's source file didn't include this course column
+            if (!cv || !cv.enabled) return; // course wasn't provided, or is explicitly "--" (not enabled) for this student
             seen++;
             sum += cv.value;
             if (cv.notStarted) notStartedCount++;
@@ -349,25 +374,32 @@ export default function CourseInsightsApp() {
             notStartedCount,
             completeCount,
             notStartedRate: seen ? notStartedCount / seen : 0,
+            enabledCount: seen,
           };
         });
-        const atRisk = sec.students.filter((s) => s.avg < threshold);
-        const startedCount = sec.students.filter((s) => Object.values(s.courseValues).some((cv) => !cv.notStarted)).length;
-        const notStartedCount = studentCount - startedCount;
+        const atRisk = evaluableStudents.filter((s) => s.avg < threshold);
+        const startedCount = sec.students.filter((s) => Object.values(s.courseValues).some((cv) => cv.enabled && !cv.notStarted)).length;
+        const notApplicableCount = sec.students.filter((s) => s.avg === null).length;
+        const notStartedCount = studentCount - startedCount - notApplicableCount;
         return {
           batch: sec.batch, branch: sec.branch, section: sec.section, label: sec.label,
           fileName: Array.from(sec.fileNames).join(", "),
-          studentCount, avgOfAvgs, perCourse, atRisk, startedCount, notStartedCount,
+          studentCount, evaluableCount: evaluableStudents.length, avgOfAvgs, perCourse, atRisk, startedCount, notStartedCount, notApplicableCount,
           students: sec.students, courses,
         };
       })
       .sort((a, b) => a.label.localeCompare(b.label));
 
     const totalStudents = sections.reduce((s, sec) => s + sec.studentCount, 0);
-    const overallAvg = totalStudents
-      ? sections.reduce((s, sec) => s + sec.avgOfAvgs * sec.studentCount, 0) / totalStudents
+    const totalEvaluable = sections.reduce((s, sec) => s + sec.evaluableCount, 0);
+    // Weighted by evaluable students (those with at least one enabled course),
+    // not total headcount, so sections full of "--" placeholders don't drag
+    // the overall figure down with averages that were never really 0%.
+    const overallAvg = totalEvaluable
+      ? sections.reduce((s, sec) => s + sec.avgOfAvgs * sec.evaluableCount, 0) / totalEvaluable
       : 0;
     const totalAtRisk = sections.reduce((s, sec) => s + sec.atRisk.length, 0);
+    const totalNotApplicable = sections.reduce((s, sec) => s + sec.notApplicableCount, 0);
 
     // password issues joined to sections — grouped the same way, by each
     // entry's own Groups value, so a combined password export splits apart
@@ -391,6 +423,7 @@ export default function CourseInsightsApp() {
         label: sec.label,
         started: sec.startedCount,
         notStarted: sec.notStartedCount,
+        notApplicable: sec.notApplicableCount,
         passwordNotSet,
         subTotal: sec.studentCount + passwordNotSet,
       };
@@ -398,9 +431,10 @@ export default function CourseInsightsApp() {
     const enrollmentTotals = enrollment.reduce((acc, r) => ({
       started: acc.started + r.started,
       notStarted: acc.notStarted + r.notStarted,
+      notApplicable: acc.notApplicable + r.notApplicable,
       passwordNotSet: acc.passwordNotSet + r.passwordNotSet,
       subTotal: acc.subTotal + r.subTotal,
-    }), { started: 0, notStarted: 0, passwordNotSet: 0, subTotal: 0 });
+    }), { started: 0, notStarted: 0, notApplicable: 0, passwordNotSet: 0, subTotal: 0 });
 
     // branch grouping for course comparison charts
     const branches = {};
@@ -428,22 +462,24 @@ export default function CourseInsightsApp() {
 
     // Every student, flattened across all sections, with section label and
     // not-started course list attached — the base list the performance
-    // categories below are filtered from.
+    // categories below are filtered from. notStartedCourses only lists
+    // courses that are actually enabled for the student; a "--" course
+    // isn't something they "haven't started", it just doesn't apply to them.
     const allStudentsFlat = sections.flatMap((sec) => sec.students.map((s) => ({
       ...s,
       sectionLabel: sec.label,
       notStartedCourses: sec.courses
-        .filter((c) => s.courseValues[c.key] && s.courseValues[c.key].notStarted)
+        .filter((c) => s.courseValues[c.key] && s.courseValues[c.key].enabled && s.courseValues[c.key].notStarted)
         .map((c) => c.label),
     })));
 
-    // Full-picture performance bands: everyone is shown, not just the
-    // at-risk group, so the report covers at-risk / average / good /
-    // excellent completion. Boundaries are user-configurable (threshold,
-    // avgMax, goodMax) rather than fixed, since what counts as "good"
-    // varies by cohort, course difficulty, and how far into the term it is.
-    // Guard against the boundaries being dragged out of order so the bands
-    // never invert into an impossible range.
+    // Full-picture performance bands: everyone with a measurable average is
+    // shown, not just the at-risk group, so the report covers at-risk /
+    // average / good / excellent completion. Boundaries are user-configurable
+    // (threshold, avgMax, goodMax) rather than fixed, since what counts as
+    // "good" varies by cohort, course difficulty, and how far into the term
+    // it is. Guard against the boundaries being dragged out of order so the
+    // bands never invert into an impossible range.
     const b1 = threshold;
     const b2 = Math.max(avgMax, b1);
     const b3 = Math.max(goodMax, b2);
@@ -453,13 +489,28 @@ export default function CourseInsightsApp() {
       { key: "good", title: "Good", range: `${b2}%–${(b3 - 0.1).toFixed(1)}%`, color: NAVY_SOFT, test: (avg) => avg >= b2 && avg < b3 },
       { key: "excellent", title: "Excellent", range: `${b3}% and above`, color: GREEN, test: (avg) => avg >= b3 },
     ];
+    // Students with avg === null have zero enabled courses in this dataset
+    // ("--" across the board) — they can't be scored into any completion
+    // band, so they get their own bucket instead of silently vanishing or
+    // dragging "At Risk" down with a fake 0%.
+    const evaluableFlat = allStudentsFlat.filter((s) => s.avg !== null);
+    const notApplicableFlat = allStudentsFlat.filter((s) => s.avg === null);
     const categorizedStudents = categoryDefs.map((c) => ({
       ...c,
-      students: allStudentsFlat.filter((s) => c.test(s.avg)).sort((a, b) => a.avg - b.avg),
+      students: evaluableFlat.filter((s) => c.test(s.avg)).sort((a, b) => a.avg - b.avg),
     }));
+    if (notApplicableFlat.length) {
+      categorizedStudents.push({
+        key: "notApplicable",
+        title: "No Enabled Courses",
+        range: `no course in this report applies to them`,
+        color: SLATE,
+        students: notApplicableFlat.sort((a, b) => a.name.localeCompare(b.name)),
+      });
+    }
     const atRiskAll = categorizedStudents[0].students;
 
-    const topPerformers = [...allStudentsFlat].sort((a, b) => b.avg - a.avg).slice(0, 5);
+    const topPerformers = [...evaluableFlat].sort((a, b) => b.avg - a.avg).slice(0, 5);
 
     const sortedByAvg = [...sections].sort((a, b) => a.avgOfAvgs - b.avgOfAvgs);
     const weakestSection = sortedByAvg[0];
@@ -477,7 +528,7 @@ export default function CourseInsightsApp() {
     const batches = Array.from(new Set(sections.map((s) => s.batch))).filter((b) => b !== "—");
 
     return {
-      sections, totalStudents, overallAvg, totalAtRisk, pwBySection, totalPasswordIssues,
+      sections, totalStudents, totalEvaluable, overallAvg, totalAtRisk, totalNotApplicable, pwBySection, totalPasswordIssues,
       branchCharts, allStudentsFlat, categorizedStudents, atRiskAll, topPerformers,
       weakestSection, strongestSection, weakestCourse, batches, enrollment, enrollmentTotals,
     };
@@ -992,7 +1043,7 @@ export default function CourseInsightsApp() {
             <StatCard icon={Users} label="Total Students" value={insights.totalStudents} accent={NAVY} />
             <StatCard icon={GraduationCap} label="Sections Covered" value={insights.sections.length} accent={NAVY} />
             <StatCard icon={TrendingUp} label="Overall Avg. Completion" value={fmtPct(insights.overallAvg)} accent={barColor(insights.overallAvg)} />
-            <StatCard icon={AlertTriangle} label={`At Risk (< ${threshold}%)`} value={insights.totalAtRisk} sub={`${((insights.totalAtRisk / insights.totalStudents) * 100 || 0).toFixed(1)}% of students`} accent={RUST} />
+            <StatCard icon={AlertTriangle} label={`At Risk (< ${threshold}%)`} value={insights.totalAtRisk} sub={`${((insights.totalAtRisk / insights.totalEvaluable) * 100 || 0).toFixed(1)}% of students`} accent={RUST} />
             <StatCard
               icon={TrendingUp}
               label="Excellent (90%+)"
@@ -1000,6 +1051,15 @@ export default function CourseInsightsApp() {
               accent={GREEN}
             />
             <StatCard icon={KeyRound} label="Passwords Not Set" value={insights.totalPasswordIssues} accent={GOLD} />
+            {insights.totalNotApplicable > 0 && (
+              <StatCard
+                icon={AlertTriangle}
+                label="No Enabled Courses"
+                value={insights.totalNotApplicable}
+                sub={`shown as "--" in the source file`}
+                accent={SLATE}
+              />
+            )}
           </div>
 
           {/* key observations */}
@@ -1023,7 +1083,7 @@ export default function CourseInsightsApp() {
                 </li>
               )}
               <li>
-                <strong>{insights.totalAtRisk}</strong> student{insights.totalAtRisk !== 1 ? "s" : ""} ({((insights.totalAtRisk / insights.totalStudents) * 100 || 0).toFixed(1)}%
+                <strong>{insights.totalAtRisk}</strong> student{insights.totalAtRisk !== 1 ? "s" : ""} ({((insights.totalAtRisk / insights.totalEvaluable) * 100 || 0).toFixed(1)}%
                 of those covered) have an average completion below the {threshold}% threshold and may need follow-up.
               </li>
               {insights.totalPasswordIssues > 0 && (
@@ -1031,6 +1091,13 @@ export default function CourseInsightsApp() {
                   <strong>{insights.totalPasswordIssues}</strong> student{insights.totalPasswordIssues !== 1 ? "s" : ""} across
                   {" "}{Object.keys(insights.pwBySection).length} section{Object.keys(insights.pwBySection).length !== 1 ? "s" : ""} have
                   not set a CodeTantra password yet and likely have no recorded progress at all — flagged separately below.
+                </li>
+              )}
+              {insights.totalNotApplicable > 0 && (
+                <li>
+                  <strong>{insights.totalNotApplicable}</strong> student{insights.totalNotApplicable !== 1 ? "s" : ""} show
+                  {" "}"--" against every course in this report — meaning none of the uploaded courses are enabled for
+                  them — and are excluded from the completion averages above, listed separately under "No Enabled Courses."
                 </li>
               )}
             </ul>
@@ -1042,7 +1109,9 @@ export default function CourseInsightsApp() {
               Enrollment &amp; Activation Summary
             </div>
             <div style={{ fontSize: 12, color: SLATE, marginBottom: 10 }}>
-              Started = has begun at least one course · Not Started = account active, zero progress on every course · Password Not Set = never logged in
+              Started = has begun at least one course · Not Started = account active, zero progress on every course ·{" "}
+              {insights.enrollmentTotals.notApplicable > 0 && "Not Applicable = no course in this report is enabled for them (shown as \"--\") · "}
+              Password Not Set = never logged in
             </div>
             <table className="cip-table">
               <thead>
@@ -1050,6 +1119,9 @@ export default function CourseInsightsApp() {
                   <th>Group</th>
                   <th>Started ({insights.enrollmentTotals.started})</th>
                   <th>Not Started ({insights.enrollmentTotals.notStarted})</th>
+                  {insights.enrollmentTotals.notApplicable > 0 && (
+                    <th>Not Applicable ({insights.enrollmentTotals.notApplicable})</th>
+                  )}
                   <th>Password Not Set ({insights.enrollmentTotals.passwordNotSet})</th>
                   <th>Sub Total ({insights.enrollmentTotals.subTotal})</th>
                 </tr>
@@ -1068,6 +1140,9 @@ export default function CourseInsightsApp() {
                     </td>
                     <td style={{ color: r.started > 0 ? NAVY_SOFT : INK, fontWeight: 600 }}>{r.started}</td>
                     <td style={{ color: r.notStarted > 0 ? RUST : INK, fontWeight: r.notStarted > 0 ? 600 : 400 }}>{r.notStarted}</td>
+                    {insights.enrollmentTotals.notApplicable > 0 && (
+                      <td style={{ color: r.notApplicable > 0 ? SLATE : INK, fontWeight: r.notApplicable > 0 ? 600 : 400 }}>{r.notApplicable}</td>
+                    )}
                     <td style={{ color: r.passwordNotSet > 0 ? GOLD : INK, fontWeight: r.passwordNotSet > 0 ? 600 : 400 }}>{r.passwordNotSet}</td>
                     <td style={{ fontWeight: 600 }}>{r.subTotal}</td>
                   </tr>
@@ -1078,6 +1153,9 @@ export default function CourseInsightsApp() {
                   <td style={{ fontWeight: 700, color: NAVY }}>Total</td>
                   <td style={{ fontWeight: 700 }}>{insights.enrollmentTotals.started}</td>
                   <td style={{ fontWeight: 700 }}>{insights.enrollmentTotals.notStarted}</td>
+                  {insights.enrollmentTotals.notApplicable > 0 && (
+                    <td style={{ fontWeight: 700 }}>{insights.enrollmentTotals.notApplicable}</td>
+                  )}
                   <td style={{ fontWeight: 700 }}>{insights.enrollmentTotals.passwordNotSet}</td>
                   <td style={{ fontWeight: 700 }}>{insights.enrollmentTotals.subTotal}</td>
                 </tr>
@@ -1228,7 +1306,7 @@ export default function CourseInsightsApp() {
                                   <td style={{ fontSize: 12, color: SLATE }}>{s.id}</td>
                                   <td>{s.name}</td>
                                   <td style={{ fontSize: 12, color: NAVY_SOFT, fontWeight: 600 }}>{s.sectionLabel}</td>
-                                  <td style={{ color: cat.color, fontWeight: 600 }}>{fmtPct(s.avg)}</td>
+                                  <td style={{ color: cat.color, fontWeight: 600 }}>{s.avg === null ? "—" : fmtPct(s.avg)}</td>
                                   {cat.key === "atRisk" && (
                                     <td style={{ fontSize: 12, color: SLATE }}>{s.notStartedCourses.join(", ") || "—"}</td>
                                   )}
