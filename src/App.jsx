@@ -380,7 +380,11 @@ export default function CourseInsightsApp() {
           })
           // A course nobody in this section has enabled (every student showed
           // "--" for it) isn't part of this section's curriculum at all —
-          // drop it here so it doesn't show up as a misleading 0.0% bar.
+          // drop it here so it doesn't show up as a misleading 0.0% bar. This
+          // is evaluated per section (not globally, and not against any fixed
+          // expected course count), so a section where only 2 of the file's
+          // courses are enabled, and another where all 3 are, are each
+          // reported against just the courses that actually apply to them.
           .filter((c) => c.enabledCount > 0);
         const atRisk = evaluableStudents.filter((s) => s.avg < threshold);
         const startedCount = sec.students.filter((s) => Object.values(s.courseValues).some((cv) => cv.enabled && !cv.notStarted)).length;
@@ -1108,17 +1112,17 @@ export default function CourseInsightsApp() {
             </ul>
           </div>
 
-          {/* enrollment / activation summary — mirrors the source dashboard's group table */}
+          {/* enrollment / activation summary — mirrors the source dashboard's group table.
+              Started / Not Started / Not Applicable are computed per student from that
+              student's own enabled course cells, so this table is correct whether every
+              group in the workbook has the same courses enabled or each group has a
+              different subset (e.g. 3 courses enabled for one group, 2 for another) —
+              nothing here assumes a fixed course count. */}
           <div data-pdf-block="true" className="cip-card" style={{ background: "#fff", border: `1px solid ${PAPER_LINE}`, borderRadius: 4, padding: "18px 22px", marginBottom: 26 }}>
-            <div style={{ fontFamily: "'Source Serif 4', Georgia, serif", fontSize: 16, fontWeight: 600, color: NAVY, marginBottom: 4 }}>
+            <div style={{ fontFamily: "'Source Serif 4', Georgia, serif", fontSize: 16, fontWeight: 600, color: NAVY }}>
               Enrollment &amp; Activation Summary
             </div>
-            <div style={{ fontSize: 12, color: SLATE, marginBottom: 10 }}>
-              Started = has begun at least one course · Not Started = account active, zero progress on every course ·{" "}
-              {insights.enrollmentTotals.notApplicable > 0 && "Not Applicable = no course in this report is enabled for them (shown as \"--\") · "}
-              Password Not Set = never logged in
-            </div>
-            <table className="cip-table">
+            <table className="cip-table" style={{ marginTop: 14 }}>
               <thead>
                 <tr>
                   <th>Group</th>
@@ -1184,7 +1188,12 @@ export default function CourseInsightsApp() {
 
           {/* course-wise chart per section — packed onto pages by the print engine
               based on each card's actual measured height, instead of always
-              starting a fresh page (which left huge blank gaps below short charts) */}
+              starting a fresh page (which left huge blank gaps below short charts).
+              Each section's bar list is built from sec.perCourse, which already
+              only includes the courses actually enabled for that section (see the
+              enabledCount > 0 filter above), so a section with 2 enabled courses
+              shows exactly 2 bars and a section with 3 shows 3 — no course list is
+              assumed to be the same size across sections. */}
           {insights.sections.map((sec) => (
             <div
               key={sec.label}
@@ -1195,7 +1204,9 @@ export default function CourseInsightsApp() {
               <div style={{ fontFamily: "'Source Serif 4', Georgia, serif", fontSize: 16, fontWeight: 600, color: NAVY, marginBottom: 4 }}>
                 Course-wise Average Completion — {sec.label}
               </div>
-              <div style={{ fontSize: 12, color: SLATE, marginBottom: 14 }}>{sec.studentCount} students in this section</div>
+              <div style={{ fontSize: 12, color: SLATE, marginBottom: 14 }}>
+                {sec.studentCount} students in this section · {sec.perCourse.length} course{sec.perCourse.length !== 1 ? "s" : ""} enabled
+              </div>
               {sec.perCourse.length === 0 ? (
                 <div style={{ fontSize: 13, color: SLATE }}>None of the uploaded courses are enabled for this section.</div>
               ) : (
