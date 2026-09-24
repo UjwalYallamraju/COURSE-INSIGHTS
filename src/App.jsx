@@ -1125,6 +1125,7 @@ export default function CourseInsightsApp() {
             <table className="cip-table" style={{ marginTop: 14 }}>
               <thead>
                 <tr>
+                  <th style={{ width: "5%" }}>S.No</th>
                   <th>Group</th>
                   <th>Started ({insights.enrollmentTotals.started})</th>
                   <th>Not Started ({insights.enrollmentTotals.notStarted})</th>
@@ -1136,8 +1137,9 @@ export default function CourseInsightsApp() {
                 </tr>
               </thead>
               <tbody>
-                {insights.enrollment.map((r) => (
+                {insights.enrollment.map((r, i) => (
                   <tr key={r.label}>
+                    <td style={{ fontSize: 12, color: SLATE }}>{i + 1}</td>
                     <td>
                       <span style={{
                         display: "inline-block", fontFamily: "'Source Serif 4', Georgia, serif", fontSize: 12.5,
@@ -1159,6 +1161,7 @@ export default function CourseInsightsApp() {
               </tbody>
               <tfoot>
                 <tr style={{ borderTop: `2px solid ${NAVY}` }}>
+                  <td style={{ fontWeight: 700, color: NAVY }}></td>
                   <td style={{ fontWeight: 700, color: NAVY }}>Total</td>
                   <td style={{ fontWeight: 700 }}>{insights.enrollmentTotals.started}</td>
                   <td style={{ fontWeight: 700 }}>{insights.enrollmentTotals.notStarted}</td>
@@ -1226,12 +1229,13 @@ export default function CourseInsightsApp() {
             <table className="cip-table">
               <thead>
                 <tr>
-                  <th>Section</th><th>Students</th><th>Avg. Completion</th><th>At Risk</th><th>Passwords Not Set</th>
+                  <th style={{ width: "6%" }}>S.No</th><th>Section</th><th>Students</th><th>Avg. Completion</th><th>At Risk</th><th>Passwords Not Set</th>
                 </tr>
               </thead>
               <tbody>
-                {insights.sections.map((s) => (
+                {insights.sections.map((s, i) => (
                   <tr key={s.label}>
+                    <td style={{ fontSize: 12, color: SLATE }}>{i + 1}</td>
                     <td style={{ fontWeight: 600, color: NAVY }}>{s.label}</td>
                     <td>{s.studentCount}</td>
                     <td><span style={{ color: barColor(s.avgOfAvgs), fontWeight: 600 }}>{fmtPct(s.avgOfAvgs)}</span></td>
