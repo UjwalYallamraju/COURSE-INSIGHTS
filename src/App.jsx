@@ -210,7 +210,13 @@ function CornerBracket({ position, color }) {
 // Plain HTML/CSS horizontal bar rows — used instead of an SVG chart library so long
 // course names wrap naturally onto multiple lines (no fixed-height axis to overlap)
 // and the block grows to whatever height the content actually needs, on screen and in print.
-function BarRows({ rows, labelWidth = 200 }) {
+// flagThreshold is optional and course-level, distinct from barColor's fixed
+// red/gold/green bands: it's a single user-configurable cutoff (courseRiskThreshold)
+// used to badge individual course bars as "At Risk" so a SPOC can spot a weak
+// course at a glance, separate from any per-student at-risk calculation.
+function BarRows({ rows, labelWidth = 200, flagThreshold }) {
+  const hasFlagging = typeof flagThreshold === "number";
+  const badgeColWidth = 78;
   return (
     <div>
       <div style={{ display: "flex", gap: 10, marginBottom: 8, paddingLeft: labelWidth + 10 }}>
@@ -228,27 +234,47 @@ function BarRows({ rows, labelWidth = 200 }) {
           ))}
         </div>
         <div style={{ width: 52, flexShrink: 0 }} />
+        {hasFlagging && <div style={{ width: badgeColWidth, flexShrink: 0 }} />}
       </div>
-      {rows.map((r, i) => (
-        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, margin: "10px 0" }}>
-          <div style={{
-            width: labelWidth, flexShrink: 0, fontSize: 12.5, color: INK, textAlign: "right",
-            paddingRight: 4, lineHeight: 1.35, wordBreak: "break-word",
-          }}>
-            {r.label}
+      {rows.map((r, i) => {
+        const flagged = hasFlagging && r.value < flagThreshold;
+        return (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, margin: "10px 0" }}>
+            <div style={{
+              width: labelWidth, flexShrink: 0, fontSize: 12.5, color: INK, textAlign: "right",
+              paddingRight: 4, lineHeight: 1.35, wordBreak: "break-word",
+            }}>
+              {r.label}
+            </div>
+            <div style={{
+              flex: 1, background: "#F1ECE0", borderRadius: 3, height: 18, position: "relative",
+              overflow: "hidden",
+              backgroundImage: "linear-gradient(to right, transparent 24.6%, #E0DACB 24.6%, #E0DACB 25.2%, transparent 25.2%, transparent 49.6%, #E0DACB 49.6%, #E0DACB 50.2%, transparent 50.2%, transparent 74.6%, #E0DACB 74.6%, #E0DACB 75.2%, transparent 75.2%)",
+              outline: flagged ? `1.5px solid ${RUST}` : "none",
+              outlineOffset: 1,
+            }}>
+              <div style={{ height: "100%", borderRadius: 3, width: `${Math.max(1.5, Math.min(100, r.value))}%`, background: r.color }} />
+            </div>
+            <div style={{ width: 52, flexShrink: 0, fontSize: 12.5, color: INK, fontWeight: 600 }}>
+              {fmtPct(r.value)}
+            </div>
+            {hasFlagging && (
+              <div style={{ width: badgeColWidth, flexShrink: 0 }}>
+                {flagged && (
+                  <span style={{
+                    display: "inline-flex", alignItems: "center", gap: 3,
+                    background: "rgba(168,69,47,0.1)", border: `1px solid ${RUST}`, color: RUST,
+                    fontSize: 10.5, fontWeight: 600, padding: "2px 7px", borderRadius: 20,
+                    whiteSpace: "nowrap",
+                  }}>
+                    <AlertTriangle size={10} /> At Risk
+                  </span>
+                )}
+              </div>
+            )}
           </div>
-          <div style={{
-            flex: 1, background: "#F1ECE0", borderRadius: 3, height: 18, position: "relative",
-            overflow: "hidden",
-            backgroundImage: "linear-gradient(to right, transparent 24.6%, #E0DACB 24.6%, #E0DACB 25.2%, transparent 25.2%, transparent 49.6%, #E0DACB 49.6%, #E0DACB 50.2%, transparent 50.2%, transparent 74.6%, #E0DACB 74.6%, #E0DACB 75.2%, transparent 75.2%)",
-          }}>
-            <div style={{ height: "100%", borderRadius: 3, width: `${Math.max(1.5, Math.min(100, r.value))}%`, background: r.color }} />
-          </div>
-          <div style={{ width: 52, flexShrink: 0, fontSize: 12.5, color: INK, fontWeight: 600 }}>
-            {fmtPct(r.value)}
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -264,6 +290,7 @@ export default function CourseInsightsApp() {
   const [threshold, setThreshold] = useState(40); // At Risk / Average boundary
   const [avgMax, setAvgMax] = useState(70); // Average / Good boundary
   const [goodMax, setGoodMax] = useState(90); // Good / Excellent boundary
+  const [courseRiskThreshold, setCourseRiskThreshold] = useState(50); // course-level (not student-level) at-risk flag
   const [collegeName, setCollegeName] = useState("");
   const [collegeLogo, setCollegeLogo] = useState(""); // data URL, embeds directly so the exported HTML has no external file dependency
   const [dragOver, setDragOver] = useState(false);
@@ -542,6 +569,15 @@ export default function CourseInsightsApp() {
       weakestSection, strongestSection, weakestCourse, batches, enrollment, enrollmentTotals,
     };
   }, [courseFiles, passwordFiles, threshold, avgMax, goodMax]);
+
+  // Course-level at-risk count: how many (section, course) pairs fall below the
+  // configurable course-risk threshold. Kept outside the insights useMemo since it
+  // only re-slices sec.perCourse (already computed there) by courseRiskThreshold —
+  // recomputing this alone on every threshold tweak is cheap and avoids widening
+  // the memo's dependency list.
+  const totalAtRiskCourses = insights
+    ? insights.sections.reduce((sum, sec) => sum + sec.perCourse.filter((c) => c.avg < courseRiskThreshold).length, 0)
+    : 0;
 
   const generatedDate = new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
 
@@ -955,6 +991,14 @@ export default function CourseInsightsApp() {
                       style={{ width: 56, padding: "4px 6px", borderRadius: 4, border: "1px solid #3E5079", background: "#152038", color: "#fff" }}
                     />
                   </label>
+                  <label style={{ color: MIST, fontSize: 12.5, display: "flex", alignItems: "center", gap: 8 }}>
+                    Course at-risk threshold (course avg % below)
+                    <input
+                      type="number" min={0} max={100} value={courseRiskThreshold}
+                      onChange={(e) => setCourseRiskThreshold(Number(e.target.value) || 0)}
+                      style={{ width: 56, padding: "4px 6px", borderRadius: 4, border: "1px solid #3E5079", background: "#152038", color: "#fff" }}
+                    />
+                  </label>
                 </div>
                 <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
                   <button
@@ -1060,6 +1104,13 @@ export default function CourseInsightsApp() {
               accent={GREEN}
             />
             <StatCard icon={KeyRound} label="Passwords Not Set" value={insights.totalPasswordIssues} accent={GOLD} />
+            <StatCard
+              icon={AlertTriangle}
+              label="Courses At Risk"
+              value={totalAtRiskCourses}
+              sub={`below ${courseRiskThreshold}% avg. completion`}
+              accent={totalAtRiskCourses > 0 ? RUST : GREEN}
+            />
             {insights.totalNotApplicable > 0 && (
               <StatCard
                 icon={AlertTriangle}
@@ -1089,6 +1140,13 @@ export default function CourseInsightsApp() {
                   <strong>{insights.weakestCourse.label}</strong>{insights.weakestCourse.code ? ` (${insights.weakestCourse.code})` : ""} has the
                   highest not-started rate in {insights.weakestCourse.branch}, with {(insights.weakestCourse.notStartedRate * 100).toFixed(0)}% of
                   students yet to begin.
+                </li>
+              )}
+              {totalAtRiskCourses > 0 && (
+                <li>
+                  <strong>{totalAtRiskCourses}</strong> course{totalAtRiskCourses !== 1 ? " instances" : " instance"} across sections
+                  {" "}(a course counted separately in each section it's enabled for) sit below the {courseRiskThreshold}% course-risk
+                  threshold — flagged with an "At Risk" badge on the course-wise charts below.
                 </li>
               )}
               <li>
@@ -1197,29 +1255,36 @@ export default function CourseInsightsApp() {
               enabledCount > 0 filter above), so a section with 2 enabled courses
               shows exactly 2 bars and a section with 3 shows 3 — no course list is
               assumed to be the same size across sections. */}
-          {insights.sections.map((sec) => (
-            <div
-              key={sec.label}
-              data-pdf-block="true"
-              className="cip-card cip-chart-card"
-              style={{ background: "#fff", border: `1px solid ${PAPER_LINE}`, borderRadius: 4, padding: "18px 22px", marginBottom: 16 }}
-            >
-              <div style={{ fontFamily: "'Source Serif 4', Georgia, serif", fontSize: 16, fontWeight: 600, color: NAVY, marginBottom: 4 }}>
-                Course-wise Average Completion — {sec.label}
+          {insights.sections.map((sec) => {
+            const atRiskCourses = sec.perCourse.filter((c) => c.avg < courseRiskThreshold);
+            return (
+              <div
+                key={sec.label}
+                data-pdf-block="true"
+                className="cip-card cip-chart-card"
+                style={{ background: "#fff", border: `1px solid ${PAPER_LINE}`, borderRadius: 4, padding: "18px 22px", marginBottom: 16 }}
+              >
+                <div style={{ fontFamily: "'Source Serif 4', Georgia, serif", fontSize: 16, fontWeight: 600, color: NAVY, marginBottom: 4 }}>
+                  Course-wise Average Completion — {sec.label}
+                </div>
+                <div style={{ fontSize: 12, color: SLATE, marginBottom: 14 }}>
+                  {sec.studentCount} students in this section · {sec.perCourse.length} course{sec.perCourse.length !== 1 ? "s" : ""} enabled
+                  {atRiskCourses.length > 0 && (
+                    <span style={{ color: RUST, fontWeight: 600 }}> · {atRiskCourses.length} at risk (below {courseRiskThreshold}%)</span>
+                  )}
+                </div>
+                {sec.perCourse.length === 0 ? (
+                  <div style={{ fontSize: 13, color: SLATE }}>None of the uploaded courses are enabled for this section.</div>
+                ) : (
+                  <BarRows
+                    rows={sec.perCourse.map((c) => ({ label: c.label, value: c.avg, color: barColor(c.avg) }))}
+                    labelWidth={260}
+                    flagThreshold={courseRiskThreshold}
+                  />
+                )}
               </div>
-              <div style={{ fontSize: 12, color: SLATE, marginBottom: 14 }}>
-                {sec.studentCount} students in this section · {sec.perCourse.length} course{sec.perCourse.length !== 1 ? "s" : ""} enabled
-              </div>
-              {sec.perCourse.length === 0 ? (
-                <div style={{ fontSize: 13, color: SLATE }}>None of the uploaded courses are enabled for this section.</div>
-              ) : (
-                <BarRows
-                  rows={sec.perCourse.map((c) => ({ label: c.label, value: c.avg, color: barColor(c.avg) }))}
-                  labelWidth={260}
-                />
-              )}
-            </div>
-          ))}
+            );
+          })}
 
           {/* section detail table */}
           <div data-pdf-block="true" className="cip-card" style={{ background: "#fff", border: `1px solid ${PAPER_LINE}`, borderRadius: 4, padding: "18px 22px", marginBottom: 26 }}>
