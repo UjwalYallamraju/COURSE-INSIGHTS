@@ -56,7 +56,11 @@ function parseCell(raw) {
 // ever a fallback for the rare row with a blank Groups cell.
 function parseSectionMeta(groupStr, fileName) {
   const source = (groupStr && String(groupStr).trim()) || fileName;
-  const m = String(source).match(/(\d{4}-\d{4})-([A-Za-z]+)-([A-Za-z0-9]+)/);
+  // Section can be a single token ("A", "1") or a multi-part, hyphenated one
+  // ("WINDOWS-2") — the third capture group allows internal hyphens so a
+  // group like "2024-2028-CSE-WINDOWS-2" keeps its full section identifier
+  // ("WINDOWS-2") instead of being truncated to just "WINDOWS".
+  const m = String(source).match(/(\d{4}-\d{4})-([A-Za-z]+)-([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)/);
   if (m) {
     return {
       batch: m[1],
