@@ -1218,7 +1218,6 @@ export default function CourseInsightsApp() {
               icon={Users}
               label="Total Students"
               value={insights.totalStudents + insights.totalPasswordIssues}
-              sub={insights.totalPasswordIssues > 0 ? `${insights.totalStudents} in course reports + ${insights.totalPasswordIssues} password not set` : undefined}
               accent={NAVY}
             />
             <StatCard icon={GraduationCap} label="Sections Covered" value={insights.sections.length} accent={NAVY} />
