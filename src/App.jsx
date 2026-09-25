@@ -1214,7 +1214,13 @@ export default function CourseInsightsApp() {
 
           {/* summary cards */}
           <div data-pdf-block="true" style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 26 }} className="cip-card">
-            <StatCard icon={Users} label="Total Students" value={insights.totalStudents} accent={NAVY} />
+            <StatCard
+              icon={Users}
+              label="Total Students"
+              value={insights.totalStudents + insights.totalPasswordIssues}
+              sub={insights.totalPasswordIssues > 0 ? `${insights.totalStudents} in course reports + ${insights.totalPasswordIssues} password not set` : undefined}
+              accent={NAVY}
+            />
             <StatCard icon={GraduationCap} label="Sections Covered" value={insights.sections.length} accent={NAVY} />
             <StatCard icon={TrendingUp} label="Overall Avg. Completion" value={fmtPct(insights.overallAvg)} accent={barColor(insights.overallAvg)} />
             <StatCard icon={AlertTriangle} label={`At Risk (< ${threshold}%)`} value={insights.totalAtRisk} sub={`${((insights.totalAtRisk / insights.totalEvaluable) * 100 || 0).toFixed(1)}% of students`} accent={RUST} />
