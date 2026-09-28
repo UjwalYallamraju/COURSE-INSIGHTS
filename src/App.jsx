@@ -328,6 +328,90 @@ function BarRows({ rows, labelWidth = 200, flagThreshold }) {
   );
 }
 
+// Horizontal bars scaled by raw student COUNT (not percent) — used for the
+// performance-band chart, where the interesting number is "how many students
+// fall in each band". Bar length is relative to the largest band so the
+// biggest group always fills the track, and each row also shows what share
+// of the measurable students that count represents.
+function CountBars({ rows, labelWidth = 150 }) {
+  const max = Math.max(1, ...rows.map((r) => r.value));
+  return (
+    <div>
+      {rows.map((r, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, margin: "12px 0" }}>
+          <div style={{
+            width: labelWidth, flexShrink: 0, fontSize: 12.5, color: INK, textAlign: "right",
+            paddingRight: 4, lineHeight: 1.35,
+          }}>
+            <div style={{ fontWeight: 600 }}>{r.label}</div>
+            {r.sub && <div style={{ fontSize: 10.5, color: SLATE }}>{r.sub}</div>}
+          </div>
+          <div style={{ flex: 1, background: "#F1ECE0", borderRadius: 3, height: 24, overflow: "hidden" }}>
+            <div style={{
+              height: "100%", borderRadius: 3, background: r.color,
+              width: r.value > 0 ? `${Math.max(1.5, (r.value / max) * 100)}%` : 0,
+            }} />
+          </div>
+          <div style={{ width: 110, flexShrink: 0, fontSize: 13, color: INK, fontWeight: 700 }}>
+            {r.value}{" "}
+            <span style={{ fontWeight: 400, fontSize: 11.5, color: SLATE }}>({r.pct.toFixed(1)}%)</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// One stacked bar per section, split into the performance bands, each segment
+// labelled with its student count. Every bar fills the full track (segments are
+// proportions of that section's own total), so sections of different sizes can
+// be compared by mix rather than by headcount; the total sits at the right.
+function StackedBandRows({ rows, bands, labelWidth = 130 }) {
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 10, paddingLeft: labelWidth + 10 }}>
+        {bands.map((b) => (
+          <span key={b.key} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, color: INK }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: b.color, display: "inline-block" }} />
+            {b.title}
+          </span>
+        ))}
+      </div>
+      {rows.map((r, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, margin: "10px 0" }}>
+          <div style={{
+            width: labelWidth, flexShrink: 0, fontSize: 12.5, color: INK, textAlign: "right",
+            paddingRight: 4, lineHeight: 1.35, wordBreak: "break-word",
+          }}>
+            {r.label}
+          </div>
+          <div style={{ flex: 1, display: "flex", height: 26, borderRadius: 3, overflow: "hidden", background: "#F1ECE0" }}>
+            {r.total > 0 && bands.map((b) => {
+              const n = r.counts[b.key] || 0;
+              if (!n) return null;
+              return (
+                <div
+                  key={b.key}
+                  style={{
+                    width: `${(n / r.total) * 100}%`, background: b.color, color: "#fff",
+                    fontSize: 11.5, fontWeight: 600, display: "flex", alignItems: "center",
+                    justifyContent: "center", overflow: "hidden",
+                  }}
+                >
+                  {n}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ width: 60, flexShrink: 0, fontSize: 12.5, color: INK, fontWeight: 600 }}>
+            {r.total} <span style={{ fontWeight: 400, fontSize: 11, color: SLATE }}>total</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function CourseInsightsApp() {
   const [courseFiles, setCourseFiles] = useState([]);
   const [passwordFiles, setPasswordFiles] = useState([]);
@@ -634,6 +718,20 @@ export default function CourseInsightsApp() {
     }
     const atRiskAll = categorizedStudents[0].students;
 
+    // Per-section student counts for each of the four scored bands, feeding
+    // the stacked "performance bands by section" chart. Uses the same
+    // categorizedStudents lists as the tables below, so the chart and the
+    // Student Performance tables can never disagree.
+    const bandKeys = categoryDefs.map((c) => c.key);
+    const bandBySection = sections.map((sec) => {
+      const counts = {};
+      bandKeys.forEach((k) => {
+        counts[k] = categorizedStudents.find((c) => c.key === k).students.filter((s) => s.sectionLabel === sec.label).length;
+      });
+      const total = bandKeys.reduce((sum, k) => sum + counts[k], 0);
+      return { label: sec.label, counts, total };
+    });
+
     const topPerformers = [...evaluableFlat].sort((a, b) => b.avg - a.avg).slice(0, 5);
 
     const sortedByAvg = [...sections].sort((a, b) => a.avgOfAvgs - b.avgOfAvgs);
@@ -653,7 +751,7 @@ export default function CourseInsightsApp() {
 
     return {
       sections, totalStudents, totalEvaluable, overallAvg, totalAtRisk, totalNotApplicable, pwBySection, totalPasswordIssues,
-      branchCharts, allStudentsFlat, categorizedStudents, atRiskAll, topPerformers,
+      branchCharts, allStudentsFlat, categorizedStudents, bandBySection, atRiskAll, topPerformers,
       weakestSection, strongestSection, weakestCourse, batches, enrollment, enrollmentTotals,
     };
   }, [courseFiles, passwordFiles, threshold, avgMax, goodMax]);
@@ -1358,6 +1456,46 @@ export default function CourseInsightsApp() {
               </tfoot>
             </table>
           </div>
+
+          {/* student count by performance band — overall, then per section.
+              Bands and their ranges come straight from the threshold inputs
+              above, so changing a threshold re-buckets both charts. */}
+          {(() => {
+            const bands = insights.categorizedStudents.filter((c) => c.key !== "notApplicable");
+            return (
+              <>
+                <div data-pdf-block="true" className="cip-card cip-chart-card" style={{ background: "#fff", border: `1px solid ${PAPER_LINE}`, borderRadius: 4, padding: "18px 22px", marginBottom: 16 }}>
+                  <div style={{ fontFamily: "'Source Serif 4', Georgia, serif", fontSize: 16, fontWeight: 600, color: NAVY, marginBottom: 4 }}>
+                    Student Count by Performance Band
+                  </div>
+                  <div style={{ fontSize: 12, color: SLATE, marginBottom: 14 }}>
+                    {insights.totalEvaluable} student{insights.totalEvaluable !== 1 ? "s" : ""} grouped by average completion across their enabled courses
+                    {insights.totalNotApplicable > 0 && ` (${insights.totalNotApplicable} with no enabled course not counted)`}
+                  </div>
+                  <CountBars
+                    rows={bands.map((c) => ({
+                      label: c.title,
+                      sub: c.range,
+                      value: c.students.length,
+                      color: c.color,
+                      pct: insights.totalEvaluable ? (c.students.length / insights.totalEvaluable) * 100 : 0,
+                    }))}
+                    labelWidth={150}
+                  />
+                </div>
+
+                <div data-pdf-block="true" className="cip-card cip-chart-card" style={{ background: "#fff", border: `1px solid ${PAPER_LINE}`, borderRadius: 4, padding: "18px 22px", marginBottom: 16 }}>
+                  <div style={{ fontFamily: "'Source Serif 4', Georgia, serif", fontSize: 16, fontWeight: 600, color: NAVY, marginBottom: 4 }}>
+                    Performance Bands by Section
+                  </div>
+                  <div style={{ fontSize: 12, color: SLATE, marginBottom: 14 }}>
+                    Number of students in each band, per section — each bar shows that section's own mix
+                  </div>
+                  <StackedBandRows rows={insights.bandBySection} bands={bands} labelWidth={130} />
+                </div>
+              </>
+            );
+          })()}
 
           {/* section-wise chart — flows with the rest of the report; the print
               engine only pushes it to a new page if it doesn't fit on the current
