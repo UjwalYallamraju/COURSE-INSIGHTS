@@ -424,6 +424,10 @@ export default function CourseInsightsApp() {
   const [avgMax, setAvgMax] = useState(70); // Average / Good boundary
   const [goodMax, setGoodMax] = useState(90); // Good / Excellent boundary
   const [courseRiskThreshold, setCourseRiskThreshold] = useState(50); // course-level (not student-level) at-risk flag
+  // Student-level tables (the per-band Student Performance section) are by far the
+  // longest part of the report. They always show on screen, but only go into the
+  // PDF / HTML export when this is ticked, so a summary-only submission stays short.
+  const [includeStudentData, setIncludeStudentData] = useState(false);
   const [collegeName, setCollegeName] = useState("");
   const [collegeLogo, setCollegeLogo] = useState(""); // data URL, embeds directly so the exported HTML has no external file dependency
   const [dragOver, setDragOver] = useState(false);
@@ -774,7 +778,11 @@ export default function CourseInsightsApp() {
   // person can open in a normal browser tab, where "Print / Save as PDF" always works.
   const downloadReport = () => {
     if (!reportRef.current) return;
-    const contentHTML = reportRef.current.outerHTML;
+    const clone = reportRef.current.cloneNode(true);
+    if (!includeStudentData) {
+      clone.querySelectorAll('[data-student-data="true"]').forEach((el) => el.remove());
+    }
+    const contentHTML = clone.outerHTML;
     const cleanCollege = collegeName.trim();
     const escapedCollege = cleanCollege.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const docTitle = cleanCollege ? `${escapedCollege} — Course Progress Report` : "Course Progress Report";
@@ -1219,6 +1227,19 @@ export default function CourseInsightsApp() {
                     />
                   </label>
                 </div>
+                <label style={{
+                  color: "#fff", fontSize: 12.5, display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
+                  background: includeStudentData ? "rgba(217,169,58,0.14)" : "rgba(255,255,255,0.04)",
+                  border: `1px solid ${includeStudentData ? GOLD_SOFT : "#3E5079"}`, borderRadius: 4, padding: "6px 10px",
+                }}>
+                  <input
+                    type="checkbox" checked={includeStudentData}
+                    onChange={(e) => setIncludeStudentData(e.target.checked)}
+                    style={{ accentColor: GOLD_SOFT, width: 15, height: 15, cursor: "pointer" }}
+                  />
+                  Include student-level data in export
+                  <span style={{ color: MIST }}>({insights.totalEvaluable + insights.totalNotApplicable} students)</span>
+                </label>
                 <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
                   <button
                     className="cip-btn"
@@ -1579,14 +1600,21 @@ export default function CourseInsightsApp() {
           {/* student performance — everyone is shown, grouped into
               at-risk / average / good / excellent completion bands, each
               independently collapsible on screen (always fully rendered
-              for print/PDF export) */}
-          <div data-pdf-block="true" className="cip-card" style={{ background: "#fff", border: `1px solid ${PAPER_LINE}`, borderRadius: 4, padding: "18px 22px", marginBottom: 8 }}>
+              for print/PDF export). Everything here is tagged data-student-data so
+              the exports can leave it out; it only gets data-pdf-block (and so
+              only lands in the PDF) when "Include student-level data" is ticked. */}
+          <div data-student-data="true" data-pdf-block={includeStudentData ? "true" : undefined} className="cip-card" style={{ background: "#fff", border: `1px solid ${PAPER_LINE}`, borderRadius: 4, padding: "18px 22px", marginBottom: 8 }}>
             <div style={{ fontFamily: "'Source Serif 4', Georgia, serif", fontSize: 16, fontWeight: 600, color: NAVY }}>
               Student Performance
             </div>
             <div style={{ fontSize: 12, color: SLATE, marginTop: 4 }}>
               All {insights.totalStudents} students, grouped by average completion band
             </div>
+            {!includeStudentData && (
+              <div className="no-print" style={{ fontSize: 12, color: GOLD, marginTop: 6 }}>
+                Not included in the PDF / HTML export — tick "Include student-level data in export" above to add it.
+              </div>
+            )}
           </div>
 
           {insights.categorizedStudents.map((cat) => {
@@ -1595,7 +1623,8 @@ export default function CourseInsightsApp() {
             return (
               <div
                 key={cat.key}
-                data-pdf-block="true"
+                data-student-data="true"
+                data-pdf-block={includeStudentData ? "true" : undefined}
                 className="cip-card"
                 style={{
                   background: "#fff", border: `1px solid ${PAPER_LINE}`, borderLeft: `4px solid ${cat.color}`,
