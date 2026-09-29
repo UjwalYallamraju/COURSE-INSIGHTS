@@ -1344,8 +1344,9 @@ export default function CourseInsightsApp() {
             <StatCard icon={AlertTriangle} label={`At Risk (< ${threshold}%)`} value={insights.totalAtRisk} sub={`${((insights.totalAtRisk / insights.totalEvaluable) * 100 || 0).toFixed(1)}% of students`} accent={RUST} />
             <StatCard
               icon={TrendingUp}
-              label="Excellent (90%+)"
+              label={`Excellent (${goodMax}%+)`}
               value={insights.categorizedStudents.find((c) => c.key === "excellent")?.students.length || 0}
+              sub={`${(((insights.categorizedStudents.find((c) => c.key === "excellent")?.students.length || 0) / insights.totalEvaluable) * 100 || 0).toFixed(1)}% of students`}
               accent={GREEN}
             />
             <StatCard icon={KeyRound} label="Passwords Not Set" value={insights.totalPasswordIssues} accent={GOLD} />
