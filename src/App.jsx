@@ -696,10 +696,10 @@ export default function CourseInsightsApp() {
     const b2 = Math.max(avgMax, b1);
     const b3 = Math.max(goodMax, b2);
     const categoryDefs = [
-      { key: "atRisk", title: "At Risk", range: `below ${b1}%`, color: RUST, test: (avg) => avg < b1 },
-      { key: "average", title: "Average", range: `${b1}%–${(b2 - 0.1).toFixed(1)}%`, color: GOLD, test: (avg) => avg >= b1 && avg < b2 },
-      { key: "good", title: "Good", range: `${b2}%–${(b3 - 0.1).toFixed(1)}%`, color: NAVY_SOFT, test: (avg) => avg >= b2 && avg < b3 },
       { key: "excellent", title: "Excellent", range: `${b3}% and above`, color: GREEN, test: (avg) => avg >= b3 },
+      { key: "good", title: "Good", range: `${b2}%–${(b3 - 0.1).toFixed(1)}%`, color: NAVY_SOFT, test: (avg) => avg >= b2 && avg < b3 },
+      { key: "average", title: "Average", range: `${b1}%–${(b2 - 0.1).toFixed(1)}%`, color: GOLD, test: (avg) => avg >= b1 && avg < b2 },
+      { key: "atRisk", title: "At Risk", range: `below ${b1}%`, color: RUST, test: (avg) => avg < b1 },
     ];
     // Students with avg === null have zero enabled courses in this dataset
     // ("--" across the board) — they can't be scored into any completion
@@ -720,7 +720,7 @@ export default function CourseInsightsApp() {
         students: notApplicableFlat.sort((a, b) => a.name.localeCompare(b.name)),
       });
     }
-    const atRiskAll = categorizedStudents[0].students;
+    const atRiskAll = categorizedStudents.find((c) => c.key === "atRisk").students;
 
     // Per-section student counts for each of the four scored bands, feeding
     // the stacked "performance bands by section" chart. Uses the same
